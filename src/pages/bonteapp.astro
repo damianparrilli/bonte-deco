@@ -1,0 +1,1186 @@
+---
+// Bonté App: ABM de productos + lista de precios + importar/exportar
+// (formato simple y formato de importación de Tiendanube).
+// Todo funciona en el navegador: los datos se guardan en este dispositivo
+// (IndexedDB). Para pasarlos a otra compu: Importar / Exportar → Respaldo.
+import listaInicial from '../data/lista-precios.json';
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Bonté App</title>
+    <link rel="icon" href="/favicon.svg" />
+    <script is:inline src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script is:inline src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  </head>
+  <body>
+    <header class="top">
+      <div class="wrap top-inner">
+        <a href="/bonteapp" class="marca"><img src="/logo.svg" alt="" width="64" height="26" /><span>App</span></a>
+        <nav class="tabs" role="group" aria-label="Secciones">
+          <button type="button" class="tab" data-tab="productos" aria-pressed="true">Productos</button>
+          <button type="button" class="tab" data-tab="precios" aria-pressed="false">Lista de precios</button>
+          <button type="button" class="tab" data-tab="io" aria-pressed="false">Importar / Exportar</button>
+        </nav>
+        <button type="button" id="btnNuevo" class="btn primary">+ Nuevo producto</button>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <!-- Filtros compartidos por Productos y Lista de precios -->
+      <section class="filtros" id="filtros">
+        <input type="search" id="buscador" placeholder="Buscar por nombre, código, tela, color o medida…" autocomplete="off" />
+        <select id="filtroCat" aria-label="Categoría"><option value="">Todas las categorías</option></select>
+        <select id="filtroEstado" aria-label="Estado">
+          <option value="">Todos</option>
+          <option value="sinprecio">Sin precio</option>
+          <option value="sinfoto">Sin foto</option>
+          <option value="oculto">No publicados</option>
+          <option value="problemas">Con problemas</option>
+        </select>
+        <span id="resumen" class="muted small"></span>
+      </section>
+
+      <!-- PRODUCTOS -->
+      <section id="tab-productos" class="panel">
+        <div id="listaProductos" class="lista"></div>
+      </section>
+
+      <!-- LISTA DE PRECIOS -->
+      <section id="tab-precios" class="panel" hidden>
+        <div class="barra">
+          <p class="muted small">Editá los precios directo en la tabla: se guardan solos. La lista se calcula como efectivo + <strong id="txtRecargo">20</strong>% salvo que escribas un valor propio.</p>
+          <div class="barra-acc">
+            <button type="button" class="btn small" id="btnAumento">Aumentar precios…</button>
+            <a class="btn small" href="/precios" target="_blank" rel="noopener">Ver lista online ↗</a>
+          </div>
+        </div>
+        <div class="tabla-scroll">
+          <table class="tabla" id="tablaPrecios">
+            <thead>
+              <tr>
+                <th>Código</th><th>Producto</th><th>Color</th><th>Medida</th><th>Detalle</th>
+                <th class="num">Efectivo / transf.</th><th class="num">Lista</th><th>Oferta</th><th title="Publicar">Pub.</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- IMPORTAR / EXPORTAR -->
+      <section id="tab-io" class="panel" hidden>
+        <div class="cards">
+          <article class="card-io">
+            <h2>Importar lista de precios</h2>
+            <p class="muted">Excel (.xlsx) o CSV con el <strong>formato simple</strong>: una fila por código. Columnas: Código, Categoría, Producto, Tela / material, Color, Medida, Detalle, Efectivo / transferencia, Precio lista, Oferta, Publicar (y opcionales: Subcategoría, Descripción, Stock, Foto 1–4, Peso). Sirve también el Excel de la lista ordenada.</p>
+            <label class="radio"><input type="radio" name="modoImport" value="actualizar" checked /> <span><strong>Actualizar por código</strong>: los códigos que ya existen se actualizan y los nuevos se agregan. No se borra nada.</span></label>
+            <label class="radio"><input type="radio" name="modoImport" value="reemplazar" /> <span><strong>Reemplazar todo</strong>: borra los productos actuales (y sus fotos) y deja solo los del archivo.</span></label>
+            <div class="acc">
+              <label class="btn primary">Elegir archivo…<input type="file" id="inpImport" accept=".xlsx,.xls,.csv,text/csv" hidden /></label>
+              <button type="button" class="btn" id="btnPlantilla">Descargar plantilla vacía</button>
+            </div>
+          </article>
+
+          <article class="card-io">
+            <h2>Exportar lista de precios</h2>
+            <p class="muted">Mismo formato simple, para guardar, editar en Excel o pegar en la planilla de Google que alimenta la lista online.</p>
+            <div class="acc">
+              <button type="button" class="btn primary" id="btnExpXlsx">Excel (.xlsx)</button>
+              <button type="button" class="btn" id="btnExpCsv">CSV</button>
+            </div>
+          </article>
+
+          <article class="card-io">
+            <h2>Exportar para Tiendanube</h2>
+            <p class="muted">CSV con el formato de importación masiva de Tiendanube. Cada producto sale con sus variantes (Color, Medida, Modelo) y el código como SKU. Las fotos no viajan en el CSV: subilas aparte (ZIP abajo).</p>
+            <div class="grid2">
+              <label>Precio en Tiendanube
+                <select id="tnPrecio">
+                  <option value="lista">Precio de lista (recomendado)</option>
+                  <option value="efectivo">Precio efectivo / transferencia</option>
+                </select>
+              </label>
+              <label>Separador
+                <select id="tnSep"><option value=",">Coma ( , )</option><option value=";">Punto y coma ( ; )</option></select>
+              </label>
+            </div>
+            <label class="check"><input type="checkbox" id="tnOfertas" /> Usar las ofertas con precio como "Precio promocional"</label>
+            <label class="check"><input type="checkbox" id="tnSoloPub" checked /> Solo productos y variantes publicados</label>
+            <p class="muted small" id="tnTip"></p>
+            <div class="acc">
+              <button type="button" class="btn primary" id="btnExpTn">Descargar CSV Tiendanube</button>
+              <button type="button" class="btn" id="btnExpFotos">Fotos (ZIP)</button>
+            </div>
+          </article>
+
+          <article class="card-io">
+            <h2>Respaldo</h2>
+            <p class="muted">Los datos se guardan solo en este navegador. Descargá un respaldo seguido (incluye fotos) para no perder nada o para seguir en otra compu.</p>
+            <div class="acc">
+              <button type="button" class="btn primary" id="btnBackup">Descargar respaldo</button>
+              <label class="btn">Restaurar respaldo…<input type="file" id="inpBackup" accept=".json,application/json" hidden /></label>
+            </div>
+          </article>
+
+          <article class="card-io">
+            <h2>Configuración</h2>
+            <label>Recargo del precio de lista sobre efectivo (%)
+              <input type="number" id="cfgRecargo" min="0" step="0.5" value="20" />
+            </label>
+            <div class="acc">
+              <button type="button" class="btn" id="btnSeed">Cargar lista de precios {listaInicial.actualizado}</button>
+              <button type="button" class="btn" id="btnExpWeb">Exportar JSON para la web</button>
+              <button type="button" class="btn danger-outline" id="btnBorrarTodo">Borrar todo</button>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <p id="vacio" class="vacio" hidden>
+        Todavía no hay productos en este navegador.<br />
+        <button type="button" class="btn primary" id="btnSeed2">Cargar la lista de precios {listaInicial.actualizado}</button>
+        <span class="muted small">o importá un Excel desde <em>Importar / Exportar</em>.</span>
+      </p>
+    </main>
+
+    <!-- Diálogo de producto -->
+    <dialog id="dlg">
+      <form id="form" method="dialog" novalidate>
+        <div class="dlg-head">
+          <h2 id="dlgTitulo">Nuevo producto</h2>
+          <button type="button" class="x" id="btnCerrar" aria-label="Cerrar">×</button>
+        </div>
+        <div class="dlg-body">
+          <div class="grid2">
+            <label>Nombre del producto *
+              <input name="nombre" required placeholder="Ej: Almohadón Cleo Premium" autocomplete="off" />
+            </label>
+            <label>Tela / material
+              <input name="tela" list="dlTelas" placeholder="Ej: Gasa" autocomplete="off" />
+            </label>
+            <label>Categoría *
+              <input name="categoria" required list="dlCategorias" placeholder="Ej: Almohadones" autocomplete="off" />
+            </label>
+            <label>Subcategoría <span class="muted">(opcional, para Tiendanube)</span>
+              <input name="subcategoria" list="dlSubcategorias" autocomplete="off" />
+            </label>
+          </div>
+
+          <fieldset>
+            <legend>Variantes y precios * <span class="muted">(una fila por código: medida, color o modelo)</span></legend>
+            <div class="tabla-scroll">
+              <table class="tabla var" id="tablaVar">
+                <thead><tr><th>Código</th><th>Color</th><th>Medida</th><th>Modelo / detalle</th><th class="num">Efectivo</th><th class="num">Lista</th><th>Oferta</th><th>Stock</th><th title="Publicar">Pub.</th><th></th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div class="acc">
+              <button type="button" class="btn small" id="btnAddVar">+ Agregar variante</button>
+              <span class="muted small">Código vacío = se genera solo. Lista vacía = efectivo + recargo. Stock vacío = sin límite.</span>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Fotos <span class="muted">(1 a 4, la primera es la principal)</span></legend>
+            <div id="fotos" class="fotos"></div>
+            <div class="acc">
+              <label class="btn small">Subir fotos<input type="file" id="inpFotos" accept="image/*" multiple hidden /></label>
+              <input type="url" id="inpFotoUrl" placeholder="…o pegá el link de una foto" />
+              <button type="button" class="btn small" id="btnFotoUrl">Agregar link</button>
+            </div>
+          </fieldset>
+
+          <label>Descripción
+            <textarea name="descripcion" rows="3" placeholder="Para Tiendanube: cómo es, cuidados, etc."></textarea>
+          </label>
+
+          <details class="extra">
+            <summary>Envío (opcional, para calcular costos en Tiendanube)</summary>
+            <div class="grid4">
+              <label>Peso (kg) <input name="peso" inputmode="decimal" /></label>
+              <label>Alto (cm) <input name="alto" inputmode="decimal" /></label>
+              <label>Ancho (cm) <input name="ancho" inputmode="decimal" /></label>
+              <label>Profundidad (cm) <input name="profundidad" inputmode="decimal" /></label>
+            </div>
+          </details>
+
+          <ul id="errores" class="errores" hidden></ul>
+        </div>
+        <div class="dlg-foot">
+          <button type="button" class="btn danger-outline" id="btnEliminar">Eliminar</button>
+          <button type="button" class="btn" id="btnDuplicar">Duplicar</button>
+          <span class="grow"></span>
+          <button type="button" class="btn" id="btnCancelar">Cancelar</button>
+          <button type="submit" class="btn primary">Guardar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Diálogo de aumento masivo -->
+    <dialog id="dlgAumento" class="chico">
+      <form method="dialog" id="formAumento">
+        <div class="dlg-head"><h2>Aumentar precios</h2></div>
+        <div class="dlg-body">
+          <p id="aumAlcance" class="muted"></p>
+          <div class="grid2">
+            <label>Porcentaje (%) <input type="number" id="aumPct" step="0.1" value="10" /></label>
+            <label>Redondear a
+              <select id="aumRedondeo"><option value="100">$100</option><option value="500">$500</option><option value="1000">$1.000</option><option value="1">Sin redondeo</option></select>
+            </label>
+          </div>
+          <label class="check"><input type="checkbox" id="aumOfertas" checked /> También las ofertas con precio y las listas escritas a mano</label>
+          <p class="muted small">Usá un número negativo para bajar precios. Te conviene descargar un respaldo antes.</p>
+        </div>
+        <div class="dlg-foot"><span class="grow"></span><button type="button" class="btn" id="aumCancelar">Cancelar</button><button type="submit" class="btn primary">Aplicar</button></div>
+      </form>
+    </dialog>
+
+    <datalist id="dlCategorias"></datalist>
+    <datalist id="dlSubcategorias"></datalist>
+    <datalist id="dlTelas"></datalist>
+    <div id="toast" class="toast" hidden></div>
+    <script is:inline type="application/json" id="seedDatos" set:html={JSON.stringify(listaInicial)} />
+
+    <style is:global>
+      :root { --bg: #faf9f7; --card: #fff; --ink: #3c2c0b; --muted: #7a6a4f; --line: #e6dfd2; --brand: #5f4d27; --soft: #f3f0eb; --danger: #b3261e; --ok: #2e7d32; --warn: #9a5b00; }
+      * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+      .wrap { max-width: 1280px; margin: 0 auto; padding: 0 16px; }
+      h2 { font-size: 1.1rem; margin: 0; }
+      .muted { color: var(--muted); font-weight: 400; }
+      .small { font-size: .84rem; }
+      .top { background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
+      .top-inner { display: flex; gap: 12px 18px; align-items: center; flex-wrap: wrap; padding-top: 10px; padding-bottom: 10px; }
+      .marca img { filter: brightness(0) opacity(.72); }
+      .marca { display: flex; align-items: center; gap: 6px; text-decoration: none; color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; }
+      .tabs { display: flex; gap: 4px; flex: 1; overflow-x: auto; }
+      .tab { border: 0; background: none; font: inherit; padding: 8px 12px; border-radius: 8px; cursor: pointer; color: var(--muted); white-space: nowrap; }
+      .tab:hover { background: var(--soft); }
+      .tab[aria-pressed="true"] { background: var(--soft); color: var(--ink); font-weight: 600; }
+      .btn { appearance: none; border: 1px solid var(--line); background: var(--card); color: var(--ink); padding: 8px 14px; border-radius: 8px; cursor: pointer; font: inherit; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; white-space: nowrap; }
+      .btn:hover { border-color: var(--brand); }
+      .btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+      .btn.small { padding: 5px 10px; font-size: .85rem; }
+      .btn.danger-outline { color: var(--danger); border-color: #e7b7b3; }
+      .btn:disabled { opacity: .5; cursor: progress; }
+      input, select, textarea { font: inherit; color: inherit; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: #fff; width: 100%; }
+      input:focus, select:focus, textarea:focus { outline: 2px solid rgba(95, 77, 39, .25); border-color: var(--brand); }
+      label { display: flex; flex-direction: column; gap: 4px; font-weight: 500; font-size: .9rem; }
+      .filtros { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 16px 0 12px; }
+      .filtros input { flex: 1 1 280px; }
+      .filtros select { width: auto; }
+      .panel { padding-bottom: 60px; }
+      .lista { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+      .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; text-align: left; font: inherit; color: inherit; padding: 0; }
+      .card:hover, .card:focus-visible { border-color: var(--brand); }
+      .card .img { aspect-ratio: 4 / 3; background: var(--soft); position: relative; overflow: hidden; display: grid; place-items: center; color: var(--muted); font-size: .8rem; }
+      .card .img img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      .card .info { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 2px; width: 100%; }
+      .card .nom { font-weight: 600; }
+      .card .cat { font-size: .8rem; color: var(--muted); }
+      .card .pie { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-top: 6px; font-size: .85rem; flex-wrap: wrap; }
+      .badges { display: flex; gap: 4px; flex-wrap: wrap; }
+      .badge { font-size: .7rem; padding: 2px 8px; border-radius: 999px; background: #fdf0dc; color: var(--warn); }
+      .badge.gris { background: #eee; color: #666; }
+      .barra { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+      .barra p { margin: 0; }
+      .barra-acc { display: flex; gap: 8px; }
+      .tabla-scroll { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+      .tabla { border-collapse: collapse; width: 100%; font-size: .88rem; }
+      .tabla th, .tabla td { padding: 6px 8px; border-bottom: 1px solid #f0ebe2; text-align: left; vertical-align: middle; }
+      .tabla th { color: var(--muted); font-weight: 500; font-size: .78rem; white-space: nowrap; background: #fcfbf8; position: sticky; top: 0; }
+      .tabla tr:last-child td { border-bottom: 0; }
+      .tabla .num { text-align: right; }
+      .tabla td.cod { font-family: ui-monospace, Menlo, monospace; font-size: .8rem; white-space: nowrap; color: var(--muted); }
+      .tabla td.prod { min-width: 200px; }
+      .tabla td.prod a { color: inherit; text-decoration: none; font-weight: 600; cursor: pointer; }
+      .tabla td.prod a:hover { text-decoration: underline; }
+      .tabla td.prod small { display: block; color: var(--muted); font-weight: 400; }
+      .tabla input { padding: 4px 6px; min-width: 70px; }
+      .tabla input.precio { width: 110px; text-align: right; }
+      .tabla input.oferta { width: 110px; }
+      .tabla input[type="checkbox"] { width: 18px; height: 18px; min-width: 0; }
+      .tabla.var input { min-width: 90px; }
+      .tabla.var input.cod { width: 100px; font-family: ui-monospace, Menlo, monospace; font-size: .82rem; }
+      .tabla.var input.stock { width: 70px; min-width: 60px; }
+      .tabla tr.oculto td { opacity: .55; }
+      .tabla .quitar { border: 1px solid var(--line); background: #fff; border-radius: 8px; width: 32px; height: 32px; cursor: pointer; color: var(--muted); }
+      .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px; }
+      .card-io { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+      .card-io p { margin: 0; font-size: .9rem; }
+      .acc { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+      .acc input[type="url"] { flex: 1 1 200px; }
+      .radio, .check { flex-direction: row; align-items: flex-start; gap: 8px; font-weight: 400; }
+      .radio input, .check input { width: auto; margin-top: 3px; }
+      .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+      .grid4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-top: 10px; }
+      .vacio { text-align: center; color: var(--muted); padding: 60px 16px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+      dialog { border: 0; border-radius: 14px; padding: 0; width: min(1000px, calc(100vw - 16px)); max-height: calc(100dvh - 16px); background: var(--card); color: var(--ink); }
+      dialog.chico { width: min(480px, calc(100vw - 16px)); }
+      dialog::backdrop { background: rgba(30, 24, 16, .45); }
+      dialog form { display: flex; flex-direction: column; max-height: calc(100dvh - 16px); }
+      .dlg-head, .dlg-foot { display: flex; align-items: center; gap: 8px; padding: 14px 18px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+      .dlg-foot { border-bottom: 0; border-top: 1px solid var(--line); }
+      .dlg-head h2 { flex: 1; }
+      .x { border: 0; background: none; font-size: 1.6rem; line-height: 1; cursor: pointer; color: var(--muted); }
+      .dlg-body { padding: 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+      .grow { flex: 1; }
+      fieldset { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+      legend { font-weight: 600; padding: 0 6px; font-size: .92rem; }
+      .fotos { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+      .foto { position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: var(--soft); border: 1px solid var(--line); }
+      .foto img { width: 100%; height: 100%; object-fit: cover; }
+      .foto .n { position: absolute; left: 6px; top: 6px; background: rgba(0,0,0,.6); color: #fff; font-size: .72rem; padding: 1px 6px; border-radius: 999px; }
+      .foto .ctrl { position: absolute; right: 4px; bottom: 4px; display: flex; gap: 4px; }
+      .foto .ctrl button { border: 0; background: rgba(255,255,255,.92); border-radius: 6px; cursor: pointer; padding: 2px 7px; }
+      .foto.vacia { display: grid; place-items: center; color: var(--muted); font-size: .8rem; border-style: dashed; }
+      .extra summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
+      .errores { margin: 0; padding: 10px 12px 10px 28px; background: #fdecea; color: var(--danger); border-radius: 8px; font-size: .9rem; }
+      .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 10px; max-width: calc(100vw - 32px); z-index: 50; box-shadow: 0 8px 24px rgba(0,0,0,.2); white-space: pre-line; }
+      @media (max-width: 640px) {
+        .top-inner { gap: 8px; }
+        .tabs { order: 3; flex-basis: 100%; }
+        #btnNuevo { margin-left: auto; padding: 6px 10px; }
+        .fotos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .lista { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+        .cards { grid-template-columns: 1fr; }
+        .dlg-foot { flex-wrap: nowrap; gap: 6px; padding: 10px 12px; }
+        .dlg-foot .btn { padding: 7px 10px; font-size: .88rem; }
+        .dlg-foot .grow { display: none; }
+        #btnCancelar { margin-left: auto; }
+      }
+    </style>
+
+    <script>
+      // ================================================================
+      // Formato de importación de Tiendanube
+      // ================================================================
+      const COLUMNAS_TN = [
+        'Identificador de URL', 'Nombre', 'Categorías',
+        'Nombre de propiedad 1', 'Valor de propiedad 1', 'Nombre de propiedad 2', 'Valor de propiedad 2',
+        'Nombre de propiedad 3', 'Valor de propiedad 3',
+        'Precio', 'Precio promocional', 'Peso (kg)', 'Alto (cm)', 'Ancho (cm)', 'Profundidad (cm)',
+        'Stock', 'SKU', 'Código de barras', 'Mostrar en tienda', 'Envío sin cargo', 'Descripción',
+        'Tags', 'Título para SEO', 'Descripción para SEO', 'Marca', 'Producto Físico',
+        'MPN (Número de pieza del fabricante)', 'Sexo', 'Rango de edad', 'Costo',
+      ];
+      // Formato simple (es el mismo que lee la lista online /precios)
+      const COLUMNAS_SIMPLE = [
+        'Código', 'Categoría', 'Subcategoría', 'Producto', 'Tela / material', 'Color', 'Medida', 'Detalle',
+        'Precio lista', 'Efectivo / transferencia', 'Oferta', 'Publicar', 'Stock', 'Descripción',
+        'Foto 1', 'Foto 2', 'Foto 3', 'Foto 4', 'Peso (kg)', 'Alto (cm)', 'Ancho (cm)', 'Profundidad (cm)',
+      ];
+      const MAX_FOTOS = 4;
+      const MARCA = 'Bonté Deco';
+
+      type Foto = { id: string; url?: string; blob?: Blob };
+      type Variante = { id: string; codigo: string; color: string; medida: string; detalle: string; efectivo: number | null; lista: number | null; oferta: string; stock: string; publicar: boolean };
+      type Producto = { id: string; creado: number; actualizado: number; nombre: string; categoria: string; subcategoria: string; tela: string; descripcion: string; fotos: Foto[]; variantes: Variante[]; peso: string; alto: string; ancho: string; profundidad: string };
+      declare const XLSX: any;
+      declare const JSZip: any;
+
+      // ================================================================
+      // Almacenamiento (IndexedDB)
+      // ================================================================
+      let dbp: Promise<IDBDatabase> | null = null;
+      const db = () => (dbp ??= new Promise((res, rej) => {
+        const r = indexedDB.open('bonte-app', 1);
+        r.onupgradeneeded = () => r.result.createObjectStore('productos', { keyPath: 'id' });
+        r.onsuccess = () => res(r.result);
+        r.onerror = () => rej(r.error);
+      }));
+      async function tx<T>(modo: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T> | void): Promise<T> {
+        const d = await db();
+        return new Promise((res, rej) => {
+          const t = d.transaction('productos', modo);
+          const r = fn(t.objectStore('productos'));
+          t.oncomplete = () => res(r ? (r as IDBRequest<T>).result : (undefined as T));
+          t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
+        });
+      }
+      const dbTodos = () => tx<Producto[]>('readonly', (s) => s.getAll());
+      const dbGuardar = (ps: Producto[]) => tx('readwrite', (s) => { ps.forEach((p) => s.put(p)); });
+      const dbBorrar = (id: string) => tx('readwrite', (s) => { s.delete(id); });
+      const dbBorrarTodo = () => tx('readwrite', (s) => { s.clear(); });
+
+      // ================================================================
+      // Utilidades
+      // ================================================================
+      const $ = <T extends HTMLElement = HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
+      const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+      const norm = (s: unknown) => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+      const slugify = (s: string) => norm(s).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120);
+      const pesos = (n: number | null | undefined) => (n ? '$ ' + Math.round(n).toLocaleString('es-AR') : '—');
+      const fecha = () => new Date().toISOString().slice(0, 10);
+      // "$ 94.800" | "$94,800" | "94800.50" | "94.800,50" -> número
+      function numero(v: unknown): number | null {
+        if (typeof v === 'number') return Number.isFinite(v) && v > 0 ? v : null;
+        let t = String(v ?? '').replace(/[^\d.,]/g, '');
+        const dec = t.match(/[.,](\d{1,2})$/);
+        t = dec ? t.slice(0, -dec[0].length).replace(/[.,]/g, '') + '.' + dec[1] : t.replace(/[.,]/g, '');
+        const n = Number(t);
+        return t && Number.isFinite(n) && n > 0 ? n : null;
+      }
+      const esPrecio = (s: string) => /^[\s$\d.,]+$/.test(String(s ?? '').trim()) && numero(s) !== null;
+      const textoPrecio = (n: number | null) => (n == null ? '' : String(n));
+      function toast(msg: string, ms = 3500) {
+        const t = $('#toast'); t.textContent = msg; t.hidden = false;
+        clearTimeout((toast as any).t); (toast as any).t = setTimeout(() => (t.hidden = true), ms);
+      }
+      function descargar(blob: Blob, nombre: string) {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob); a.download = nombre;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      }
+      const urlCache = new WeakMap<Blob, string>();
+      const srcFoto = (f: Foto) => f.url || (f.blob ? (urlCache.get(f.blob) ?? (urlCache.set(f.blob, URL.createObjectURL(f.blob)), urlCache.get(f.blob)!)) : '');
+      async function achicarImagen(file: File): Promise<Blob> {
+        try {
+          const bmp = await createImageBitmap(file);
+          const k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+          const c = document.createElement('canvas');
+          c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+          const ctx = c.getContext('2d')!; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+          ctx.drawImage(bmp, 0, 0, c.width, c.height);
+          return await new Promise((res) => c.toBlob((b) => res(b || file), 'image/jpeg', 0.86));
+        } catch { return file; }
+      }
+
+      // ================================================================
+      // Configuración y reglas de negocio
+      // ================================================================
+      const cfg = { recargo: 20 };
+      try { const r = Number(localStorage.getItem('bonteapp-recargo')); if (r >= 0 && localStorage.getItem('bonteapp-recargo') !== null) cfg.recargo = r; } catch {}
+      const listaAuto = (efectivo: number | null) => (efectivo ? Math.round(efectivo * (1 + cfg.recargo / 100)) : null);
+      const listaDe = (v: Variante) => v.lista ?? listaAuto(v.efectivo);
+
+      let productos: Producto[] = [];
+
+      function prefijoDe(categoria: string, excluir?: Producto): string {
+        const cuenta = new Map<string, number>();
+        productos.filter((p) => p !== excluir && norm(p.categoria) === norm(categoria)).forEach((p) => p.variantes.forEach((v) => {
+          const m = v.codigo.match(/^([A-Za-z]+)-\d+$/); if (m) cuenta.set(m[1].toUpperCase(), (cuenta.get(m[1].toUpperCase()) || 0) + 1);
+        }));
+        if (cuenta.size) return [...cuenta].sort((a, b) => b[1] - a[1])[0][0];
+        const base = norm(categoria).replace(/[^a-z]/g, '').toUpperCase();
+        return (base.slice(0, 3) || 'PRD').padEnd(3, 'X');
+      }
+      function siguienteCodigo(categoria: string, usados: Set<string>): string {
+        const pre = prefijoDe(categoria);
+        let max = 0;
+        usados.forEach((c) => { const m = c.match(new RegExp(`^${pre}-(\\d+)$`, 'i')); if (m) max = Math.max(max, Number(m[1])); });
+        let cod = '';
+        do { max++; cod = `${pre}-${String(max).padStart(3, '0')}`; } while (usados.has(cod.toUpperCase()));
+        usados.add(cod.toUpperCase());
+        return cod;
+      }
+      const codigosUsados = (excluir?: Producto) => new Set(productos.filter((p) => p.id !== excluir?.id).flatMap((p) => p.variantes.map((v) => v.codigo.trim().toUpperCase())).filter(Boolean));
+
+      function nuevaVariante(parcial: Partial<Variante> = {}): Variante {
+        return { id: uid(), codigo: '', color: '', medida: '', detalle: '', efectivo: null, lista: null, oferta: '', stock: '', publicar: true, ...parcial };
+      }
+      function nuevoProducto(parcial: Partial<Producto> = {}): Producto {
+        const t = Date.now();
+        return { id: uid(), creado: t, actualizado: t, nombre: '', categoria: '', subcategoria: '', tela: '', descripcion: '', fotos: [], variantes: [], peso: '', alto: '', ancho: '', profundidad: '', ...parcial };
+      }
+
+      const sinPrecio = (p: Producto) => p.variantes.some((v) => !v.efectivo && !v.lista);
+      const publicado = (p: Producto) => p.variantes.some((v) => v.publicar);
+      // Combinaciones repetidas = Tiendanube no las puede distinguir
+      function combosRepetidos(p: Producto) {
+        const k = p.variantes.map((v) => [v.color, v.medida, v.detalle].map(norm).join('|'));
+        return p.variantes.length > 1 && new Set(k).size !== k.length;
+      }
+      function problemas(p: Producto): string[] {
+        const e: string[] = [];
+        if (!p.fotos.length) e.push('Sin foto');
+        if (sinPrecio(p)) e.push('Sin precio');
+        if (combosRepetidos(p)) e.push('Variantes repetidas');
+        if (!publicado(p)) e.push('No publicado');
+        return e;
+      }
+
+      // ================================================================
+      // Render: filtros, productos, lista de precios
+      // ================================================================
+      let tab = 'productos';
+      const filtro = () => ({ q: norm(($('#buscador') as HTMLInputElement).value), cat: ($('#filtroCat') as HTMLSelectElement).value, estado: ($('#filtroEstado') as HTMLSelectElement).value });
+      const textoBusqueda = (p: Producto, v?: Variante) => norm([p.nombre, p.categoria, p.subcategoria, p.tela, ...(v ? [v.codigo, v.color, v.medida, v.detalle] : p.variantes.flatMap((x) => [x.codigo, x.color, x.medida, x.detalle]))].join(' '));
+      function pasaFiltro(p: Producto, v?: Variante) {
+        const f = filtro();
+        if (f.cat && p.categoria !== f.cat) return false;
+        if (f.estado === 'sinprecio' && !(v ? !v.efectivo && !v.lista : sinPrecio(p))) return false;
+        if (f.estado === 'sinfoto' && p.fotos.length) return false;
+        if (f.estado === 'oculto' && (v ? v.publicar : publicado(p) && p.variantes.every((x) => x.publicar))) return false;
+        if (f.estado === 'problemas' && !problemas(p).length) return false;
+        if (f.q) {
+          const t = textoBusqueda(p, v); const t2 = t.replace(/[\s-]/g, '');
+          if (!f.q.split(/\s+/).every((w) => t.includes(w) || t2.includes(w.replace(/-/g, '')))) return false;
+        }
+        return true;
+      }
+      const ordenados = () => [...productos].sort((a, b) => a.creado - b.creado);
+
+      function renderTodo() {
+        const cats = [...new Set(ordenados().map((p) => p.categoria).filter(Boolean))];
+        const sel = $('#filtroCat') as HTMLSelectElement; const actual = sel.value;
+        sel.innerHTML = '<option value="">Todas las categorías</option>' + cats.map((c) => `<option>${esc(c)}</option>`).join('');
+        sel.value = cats.includes(actual) ? actual : '';
+        $('#dlCategorias').innerHTML = cats.map((c) => `<option value="${esc(c)}">`).join('');
+        $('#dlSubcategorias').innerHTML = [...new Set(productos.map((p) => p.subcategoria).filter(Boolean))].map((c) => `<option value="${esc(c)}">`).join('');
+        $('#dlTelas').innerHTML = [...new Set(productos.map((p) => p.tela).filter(Boolean))].sort().map((c) => `<option value="${esc(c)}">`).join('');
+        $('#vacio').hidden = productos.length > 0 || tab === 'io';
+        $('#filtros').hidden = tab === 'io' || !productos.length;
+        if (tab === 'productos') renderProductos();
+        if (tab === 'precios') renderPrecios();
+        const nVar = productos.reduce((a, p) => a + p.variantes.length, 0);
+        $('#txtRecargo').textContent = String(cfg.recargo);
+        const tip = `En Tiendanube podés configurar un descuento del ${(100 - 10000 / (100 + cfg.recargo)).toFixed(2).replace('.', ',')}% para pagos por transferencia: así el precio con descuento coincide con el de efectivo.`;
+        $('#tnTip').textContent = tip;
+        ($('#cfgRecargo') as HTMLInputElement).value = String(cfg.recargo);
+        return nVar;
+      }
+
+      function renderProductos() {
+        const vis = ordenados().filter((p) => pasaFiltro(p));
+        $('#resumen').textContent = `${vis.length} de ${productos.length} productos`;
+        $('#listaProductos').innerHTML = vis.map((p) => {
+          const precios = p.variantes.map((v) => v.efectivo).filter((x): x is number => !!x);
+          const min = precios.length ? Math.min(...precios) : null; const max = precios.length ? Math.max(...precios) : null;
+          const rango = min == null ? 'Sin precio' : min === max ? pesos(min) : `${pesos(min)} – ${pesos(max)}`;
+          const probs = problemas(p);
+          return `<button type="button" class="card" data-id="${p.id}">
+            <div class="img">${p.fotos[0] ? `<img src="${esc(srcFoto(p.fotos[0]))}" alt="" loading="lazy">` : 'Sin foto'}</div>
+            <div class="info">
+              <span class="nom">${esc(p.nombre || 'Sin nombre')}</span>
+              <span class="cat">${esc([p.categoria, p.tela].filter(Boolean).join(' · '))} · ${p.variantes.length} ${p.variantes.length === 1 ? 'variante' : 'variantes'}</span>
+              <div class="pie"><strong>${rango}</strong>
+                <span class="badges">${probs.filter((x) => x !== 'Sin foto').map((x) => `<span class="badge${x === 'No publicado' ? ' gris' : ''}">${x}</span>`).join('')}</span>
+              </div>
+            </div>
+          </button>`;
+        }).join('');
+      }
+
+      function renderPrecios() {
+        const filas: [Producto, Variante][] = [];
+        ordenados().forEach((p) => p.variantes.forEach((v) => { if (pasaFiltro(p, v)) filas.push([p, v]); }));
+        const total = productos.reduce((a, p) => a + p.variantes.length, 0);
+        $('#resumen').textContent = `${filas.length} de ${total} códigos`;
+        const LIM = 600;
+        $('#tablaPrecios tbody').innerHTML = filas.slice(0, LIM).map(([p, v]) => `<tr data-p="${p.id}" data-v="${v.id}" class="${v.publicar ? '' : 'oculto'}">
+            <td class="cod">${esc(v.codigo)}</td>
+            <td class="prod"><a data-abrir="${p.id}">${esc(p.nombre)}</a><small>${esc([p.categoria, p.tela].filter(Boolean).join(' · '))}</small></td>
+            <td>${esc(v.color)}</td><td>${esc(v.medida)}</td><td>${esc(v.detalle)}</td>
+            <td class="num"><input class="precio" data-k="efectivo" inputmode="decimal" value="${esc(textoPrecio(v.efectivo))}" aria-label="Precio efectivo ${esc(v.codigo)}"></td>
+            <td class="num"><input class="precio" data-k="lista" inputmode="decimal" value="${esc(textoPrecio(v.lista))}" placeholder="${esc(textoPrecio(listaAuto(v.efectivo)))}" aria-label="Precio lista ${esc(v.codigo)}"></td>
+            <td><input class="oferta" data-k="oferta" value="${esc(v.oferta)}" aria-label="Oferta ${esc(v.codigo)}"></td>
+            <td><input type="checkbox" data-k="publicar" ${v.publicar ? 'checked' : ''} aria-label="Publicar ${esc(v.codigo)}"></td>
+          </tr>`).join('') + (filas.length > LIM ? `<tr><td colspan="9" class="muted">Se muestran ${LIM} de ${filas.length}. Usá el buscador para ver el resto.</td></tr>` : '');
+      }
+
+      // Edición en línea de la lista de precios (se guarda sola)
+      const pendientes = new Set<Producto>();
+      let tGuardar: any;
+      function guardarLuego(p: Producto) {
+        p.actualizado = Date.now(); pendientes.add(p);
+        clearTimeout(tGuardar);
+        tGuardar = setTimeout(async () => { const ps = [...pendientes]; pendientes.clear(); await dbGuardar(ps); }, 400);
+      }
+      addEventListener('beforeunload', () => { if (pendientes.size) dbGuardar([...pendientes]); });
+      $('#tablaPrecios').addEventListener('change', (ev) => {
+        const inp = ev.target as HTMLInputElement; const tr = inp.closest('tr'); if (!tr || !inp.dataset.k) return;
+        const p = productos.find((x) => x.id === tr.dataset.p)!; const v = p.variantes.find((x) => x.id === tr.dataset.v)!;
+        const k = inp.dataset.k;
+        if (k === 'publicar') { v.publicar = inp.checked; tr.classList.toggle('oculto', !v.publicar); }
+        else if (k === 'oferta') v.oferta = inp.value.trim();
+        else {
+          const n = inp.value.trim() ? numero(inp.value) : null;
+          if (inp.value.trim() && n == null) { toast('Ese precio no es un número.'); inp.value = textoPrecio((v as any)[k]); return; }
+          (v as any)[k] = n == null ? null : Math.round(n * 100) / 100;
+          if (k === 'lista' && n != null && n === listaAuto(v.efectivo)) v.lista = null; // igual al automático
+          inp.value = textoPrecio((v as any)[k]);
+          if (k === 'efectivo') ($('input[data-k="lista"]', tr) as HTMLInputElement).placeholder = textoPrecio(listaAuto(v.efectivo));
+        }
+        guardarLuego(p);
+      });
+      $('#tablaPrecios').addEventListener('click', (ev) => {
+        const a = (ev.target as HTMLElement).closest<HTMLElement>('[data-abrir]');
+        if (a) abrir(productos.find((p) => p.id === a.dataset.abrir));
+      });
+      $('#tablaPrecios').addEventListener('keydown', (ev) => {
+        // Enter baja a la fila siguiente, como en Excel
+        const e = ev as KeyboardEvent; const inp = e.target as HTMLInputElement;
+        if (e.key !== 'Enter' || inp.tagName !== 'INPUT' || inp.type === 'checkbox') return;
+        e.preventDefault(); inp.blur();
+        const sig = inp.closest('tr')?.nextElementSibling?.querySelector<HTMLInputElement>(`input[data-k="${inp.dataset.k}"]`);
+        sig?.focus(); sig?.select();
+      });
+
+      // Pestañas y filtros
+      function irA(t: string) {
+        tab = t;
+        document.querySelectorAll<HTMLElement>('.tab').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tab === t)));
+        ['productos', 'precios', 'io'].forEach((x) => ($('#tab-' + x).hidden = x !== t));
+        try { localStorage.setItem('bonteapp-tab', t); } catch {}
+        renderTodo();
+      }
+      document.querySelectorAll<HTMLElement>('.tab').forEach((b) => b.addEventListener('click', () => irA(b.dataset.tab!)));
+      let tBus: any;
+      $('#buscador').addEventListener('input', () => { clearTimeout(tBus); tBus = setTimeout(renderTodo, 120); });
+      $('#filtroCat').addEventListener('change', renderTodo);
+      $('#filtroEstado').addEventListener('change', renderTodo);
+      $('#listaProductos').addEventListener('click', (ev) => {
+        const c = (ev.target as HTMLElement).closest<HTMLElement>('.card');
+        if (c) abrir(productos.find((p) => p.id === c.dataset.id));
+      });
+
+      // ================================================================
+      // Alta / Modificación / Baja de producto
+      // ================================================================
+      const dlg = $('#dlg') as HTMLDialogElement;
+      const form = $('#form') as HTMLFormElement;
+      const CAMPOS = ['nombre', 'tela', 'categoria', 'subcategoria', 'descripcion', 'peso', 'alto', 'ancho', 'profundidad'] as const;
+      const campo = (n: string) => form.elements.namedItem(n) as HTMLInputElement;
+      let editando: Producto = nuevoProducto();
+      let esNuevo = true;
+
+      function abrir(p?: Producto, copia = false) {
+        esNuevo = !p || copia;
+        editando = p ? structuredClone(p) : nuevoProducto({ variantes: [nuevaVariante()] });
+        if (copia) {
+          editando.id = uid(); editando.creado = Date.now(); editando.nombre += ' (copia)';
+          editando.variantes = editando.variantes.map((v) => ({ ...v, id: uid(), codigo: '' }));
+        }
+        $('#dlgTitulo').textContent = esNuevo ? (copia ? 'Duplicar producto' : 'Nuevo producto') : 'Editar producto';
+        $('#btnEliminar').hidden = esNuevo; $('#btnDuplicar').hidden = esNuevo;
+        CAMPOS.forEach((c) => (campo(c).value = (editando as any)[c] ?? ''));
+        $('#errores').hidden = true;
+        renderVariantes(); renderFotos();
+        if (!dlg.open) dlg.showModal();
+        campo('nombre').focus();
+      }
+
+      function renderVariantes() {
+        $('#tablaVar tbody').innerHTML = editando.variantes.map((v, i) => `<tr data-i="${i}">
+          <td><input class="cod" data-k="codigo" value="${esc(v.codigo)}" placeholder="auto"></td>
+          <td><input data-k="color" value="${esc(v.color)}"></td>
+          <td><input data-k="medida" value="${esc(v.medida)}" placeholder="Ej: 50 x 50"></td>
+          <td><input data-k="detalle" value="${esc(v.detalle)}"></td>
+          <td><input class="precio" data-k="efectivo" inputmode="decimal" value="${esc(textoPrecio(v.efectivo))}"></td>
+          <td><input class="precio" data-k="lista" inputmode="decimal" value="${esc(textoPrecio(v.lista))}" placeholder="${esc(textoPrecio(listaAuto(v.efectivo)))}"></td>
+          <td><input class="oferta" data-k="oferta" value="${esc(v.oferta)}" placeholder="Ej: 2 x 65000"></td>
+          <td><input class="stock" data-k="stock" inputmode="numeric" value="${esc(v.stock)}" placeholder="∞"></td>
+          <td><input type="checkbox" data-k="publicar" ${v.publicar ? 'checked' : ''}></td>
+          <td><button type="button" class="quitar" title="Quitar variante" aria-label="Quitar variante">✕</button></td>
+        </tr>`).join('');
+      }
+      $('#tablaVar').addEventListener('input', (ev) => {
+        const inp = ev.target as HTMLInputElement; const tr = inp.closest('tr'); if (!tr) return;
+        const v = editando.variantes[Number(tr.dataset.i)]; const k = inp.dataset.k!;
+        if (k === 'publicar') v.publicar = inp.checked;
+        else if (k === 'efectivo' || k === 'lista') {
+          (v as any)[k] = inp.value.trim() ? numero(inp.value) : null;
+          if (k === 'efectivo') ($('input[data-k="lista"]', tr) as HTMLInputElement).placeholder = textoPrecio(listaAuto(v.efectivo));
+        } else (v as any)[k] = inp.value;
+      });
+      $('#tablaVar').addEventListener('click', (ev) => {
+        const b = (ev.target as HTMLElement).closest('.quitar'); if (!b) return;
+        editando.variantes.splice(Number(b.closest<HTMLElement>('tr')!.dataset.i), 1);
+        renderVariantes();
+      });
+      $('#btnAddVar').addEventListener('click', () => {
+        const ult = editando.variantes[editando.variantes.length - 1];
+        editando.variantes.push(nuevaVariante(ult ? { color: ult.color, detalle: ult.detalle } : {}));
+        renderVariantes();
+        ($('#tablaVar tbody tr:last-child input[data-k="medida"]') as HTMLInputElement)?.focus();
+      });
+
+      function renderFotos() {
+        const celdas = editando.fotos.map((f, i) => `<div class="foto" data-i="${i}"><img src="${esc(srcFoto(f))}" alt="Foto ${i + 1}">
+          <span class="n">${i === 0 ? 'Principal' : i + 1}</span>
+          <div class="ctrl">${i > 0 ? '<button type="button" data-acc="izq" title="Mover a la izquierda">←</button>' : ''}<button type="button" data-acc="quitar" title="Quitar">✕</button></div></div>`);
+        for (let i = editando.fotos.length; i < MAX_FOTOS; i++) celdas.push(`<div class="foto vacia">Foto ${i + 1}</div>`);
+        $('#fotos').innerHTML = celdas.join('');
+        const lleno = editando.fotos.length >= MAX_FOTOS;
+        ['#inpFotos', '#inpFotoUrl', '#btnFotoUrl'].forEach((s) => (($(s) as HTMLInputElement).disabled = lleno));
+      }
+      $('#fotos').addEventListener('click', (ev) => {
+        const b = (ev.target as HTMLElement).closest('button'); if (!b) return;
+        const i = Number(b.closest<HTMLElement>('.foto')!.dataset.i);
+        if (b.dataset.acc === 'quitar') editando.fotos.splice(i, 1);
+        else [editando.fotos[i - 1], editando.fotos[i]] = [editando.fotos[i], editando.fotos[i - 1]];
+        renderFotos();
+      });
+      $('#inpFotos').addEventListener('change', async (ev) => {
+        const inp = ev.target as HTMLInputElement; const files = [...(inp.files || [])];
+        const lugar = MAX_FOTOS - editando.fotos.length;
+        if (files.length > lugar) toast(`Se agregaron ${lugar}: el máximo es ${MAX_FOTOS} fotos.`);
+        for (const f of files.slice(0, lugar)) editando.fotos.push({ id: uid(), blob: await achicarImagen(f) });
+        inp.value = ''; renderFotos();
+      });
+      function agregarFotoUrl() {
+        const inp = $('#inpFotoUrl') as HTMLInputElement; const url = inp.value.trim();
+        if (!/^https?:\/\//i.test(url)) { toast('Pegá un link que empiece con http:// o https://'); return; }
+        if (editando.fotos.length < MAX_FOTOS) editando.fotos.push({ id: uid(), url });
+        inp.value = ''; renderFotos();
+      }
+      $('#btnFotoUrl').addEventListener('click', agregarFotoUrl);
+      $('#inpFotoUrl').addEventListener('keydown', (ev) => { if ((ev as KeyboardEvent).key === 'Enter') { ev.preventDefault(); agregarFotoUrl(); } });
+
+      form.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        CAMPOS.forEach((c) => ((editando as any)[c] = campo(c).value.trim()));
+        editando.variantes = editando.variantes.filter((v) => v.codigo.trim() || v.color.trim() || v.medida.trim() || v.detalle.trim() || v.efectivo || v.lista);
+        editando.variantes.forEach((v) => { (['codigo', 'color', 'medida', 'detalle', 'oferta', 'stock'] as const).forEach((k) => (v[k] = String(v[k] ?? '').trim())); if (v.lista != null && v.lista === listaAuto(v.efectivo)) v.lista = null; });
+        const errs: string[] = [];
+        if (!editando.nombre) errs.push('Falta el nombre.');
+        if (!editando.categoria) errs.push('Falta la categoría.');
+        if (!editando.variantes.length) errs.push('Agregá al menos una variante (con su precio).');
+        const usados = codigosUsados(editando);
+        const propios = new Set<string>();
+        editando.variantes.forEach((v) => {
+          const c = v.codigo.toUpperCase(); if (!c) return;
+          if (usados.has(c)) errs.push(`El código ${v.codigo} ya lo usa otro producto.`);
+          if (propios.has(c)) errs.push(`El código ${v.codigo} está repetido.`);
+          propios.add(c);
+        });
+        editando.variantes.forEach((v) => { if (v.stock && !/^\d+$/.test(v.stock)) errs.push(`Stock de ${v.codigo || 'una variante'}: tiene que ser un número entero.`); });
+        if (errs.length) {
+          const ul = $('#errores'); ul.innerHTML = errs.map((e) => `<li>${esc(e)}</li>`).join(''); ul.hidden = false;
+          ul.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); return;
+        }
+        const todos = new Set([...usados, ...propios]);
+        editando.variantes.forEach((v) => { if (!v.codigo) v.codigo = siguienteCodigo(editando.categoria, todos); });
+        editando.actualizado = Date.now();
+        await dbGuardar([editando]);
+        const i = productos.findIndex((p) => p.id === editando.id);
+        if (i >= 0) productos[i] = editando; else productos.push(editando);
+        dlg.close(); renderTodo();
+        const avisos = problemas(editando).filter((x) => x !== 'No publicado');
+        toast(avisos.length ? `Guardado. Ojo: ${avisos.join(', ').toLowerCase()}.` : 'Producto guardado ✓');
+      });
+      $('#btnCerrar').addEventListener('click', () => dlg.close());
+      $('#btnCancelar').addEventListener('click', () => dlg.close());
+      $('#btnDuplicar').addEventListener('click', () => abrir(productos.find((p) => p.id === editando.id), true));
+      $('#btnEliminar').addEventListener('click', async () => {
+        if (!confirm(`¿Eliminar "${editando.nombre}" y sus ${editando.variantes.length} variantes?`)) return;
+        await dbBorrar(editando.id);
+        productos = productos.filter((p) => p.id !== editando.id);
+        dlg.close(); renderTodo(); toast('Producto eliminado');
+      });
+      $('#btnNuevo').addEventListener('click', () => abrir());
+
+      // ================================================================
+      // Aumento masivo de precios
+      // ================================================================
+      const dlgA = $('#dlgAumento') as HTMLDialogElement;
+      const filasFiltradas = () => ordenados().flatMap((p) => p.variantes.filter((v) => pasaFiltro(p, v)).map((v) => [p, v] as [Producto, Variante]));
+      $('#btnAumento').addEventListener('click', () => {
+        const n = filasFiltradas().length;
+        const f = filtro();
+        $('#aumAlcance').textContent = `Se va a aplicar a ${n} códigos${f.q || f.cat || f.estado ? ' (los que muestra el filtro actual)' : ' (toda la lista)'}.`;
+        dlgA.showModal();
+      });
+      $('#aumCancelar').addEventListener('click', () => dlgA.close());
+      $('#formAumento').addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const pct = Number(($('#aumPct') as HTMLInputElement).value);
+        const red = Number(($('#aumRedondeo') as HTMLSelectElement).value);
+        const ofertas = ($('#aumOfertas') as HTMLInputElement).checked;
+        if (!pct) { dlgA.close(); return; }
+        const aplicar = (n: number) => Math.max(red, Math.round((n * (1 + pct / 100)) / red) * red);
+        const tocados = new Set<Producto>();
+        filasFiltradas().forEach(([p, v]) => {
+          if (v.efectivo) v.efectivo = aplicar(v.efectivo);
+          if (ofertas && v.lista) v.lista = aplicar(v.lista);
+          if (ofertas && esPrecio(v.oferta)) v.oferta = String(aplicar(numero(v.oferta)!));
+          p.actualizado = Date.now(); tocados.add(p);
+        });
+        await dbGuardar([...tocados]);
+        dlgA.close(); renderTodo();
+        toast(`Precios actualizados (${pct > 0 ? '+' : ''}${pct}%) en ${tocados.size} productos.`);
+      });
+
+      // ================================================================
+      // Importar formato simple (Excel / CSV)
+      // ================================================================
+      function leerHoja(buf: ArrayBuffer, nombre: string): any[][] {
+        if (typeof XLSX === 'undefined') throw new Error('No se pudo cargar la librería de Excel (revisá la conexión).');
+        const wb = /\.csv$/i.test(nombre)
+          ? XLSX.read(new TextDecoder('utf-8').decode(buf), { type: 'string', raw: true })
+          : XLSX.read(buf, { type: 'array' });
+        const hoja = wb.SheetNames.find((n: string) => norm(n) === 'lista de precios') || wb.SheetNames[0];
+        return XLSX.utils.sheet_to_json(wb.Sheets[hoja], { header: 1, defval: '', raw: true });
+      }
+      const ALIAS: Record<string, string[]> = {
+        codigo: ['codigo', 'sku', 'cod'], categoria: ['categoria', 'rubro'], subcategoria: ['subcategoria'],
+        producto: ['producto', 'nombre'], tela: ['tela', 'material'], color: ['color'], medida: ['medida', 'tamano', 'talle'],
+        detalle: ['detalle', 'modelo'], lista: ['precio lista', 'lista'], efectivo: ['efectivo', 'precio efectivo', 'contado', 'transferencia'],
+        oferta: ['oferta'], publicar: ['publicar', 'mostrar'], stock: ['stock'], descripcion: ['descripcion'],
+        foto1: ['foto 1', 'foto1', 'imagen 1'], foto2: ['foto 2', 'foto2', 'imagen 2'], foto3: ['foto 3', 'foto3', 'imagen 3'], foto4: ['foto 4', 'foto4', 'imagen 4'],
+        peso: ['peso'], alto: ['alto'], ancho: ['ancho'], profundidad: ['profundidad'],
+      };
+      function mapearColumnas(enc: any[]): Record<string, number> {
+        const h = enc.map((x) => norm(x));
+        const m: Record<string, number> = {};
+        Object.entries(ALIAS).forEach(([k, alias]) => {
+          const i = h.findIndex((x) => alias.some((a) => x === a || x.startsWith(a + ' ') || x.startsWith(a + '/') || x.startsWith(a + ' (')));
+          if (i >= 0) m[k] = i;
+        });
+        return m;
+      }
+      type FilaImport = Record<string, string> & { _lista: number | null; _efectivo: number | null; _fila: number };
+      function filasDesde(tabla: any[][]): { filas: FilaImport[]; error?: string } {
+        const iEnc = tabla.findIndex((r) => { const m = mapearColumnas(r); return m.producto !== undefined && (m.efectivo !== undefined || m.lista !== undefined); });
+        if (iEnc < 0) return { filas: [], error: 'No encontré los encabezados. Tiene que haber al menos las columnas "Producto" y "Efectivo / transferencia" (o "Precio lista"). Descargá la plantilla para ver el formato.' };
+        const m = mapearColumnas(tabla[iEnc]);
+        const filas: FilaImport[] = [];
+        tabla.slice(iEnc + 1).forEach((r, k) => {
+          const get = (c: string) => (m[c] === undefined ? '' : String(r[m[c]] ?? '').trim());
+          if (!get('producto') && !get('codigo')) return;
+          const f: any = {}; Object.keys(ALIAS).forEach((c) => (f[c] = get(c)));
+          f._lista = m.lista === undefined ? null : numero(r[m.lista]);
+          f._efectivo = m.efectivo === undefined ? null : numero(r[m.efectivo]);
+          f._fila = iEnc + k + 2;
+          f._tiene = m;
+          filas.push(f);
+        });
+        return { filas };
+      }
+      function aplicarImport(filas: FilaImport[], reemplazar: boolean) {
+        let base: Producto[] = reemplazar ? [] : structuredClone(productos);
+        const porCodigo = new Map<string, [Producto, Variante]>();
+        base.forEach((p) => p.variantes.forEach((v) => v.codigo && porCodigo.set(v.codigo.toUpperCase(), [p, v])));
+        const clave = (cat: string, nom: string, tela: string) => [cat, nom, tela].map(norm).join('|');
+        const porClave = new Map<string, Producto>(base.map((p) => [clave(p.categoria, p.nombre, p.tela), p]));
+        const res = { nuevosProd: 0, nuevasVar: 0, actualizadas: 0, avisos: [] as string[], eliminados: [] as string[] };
+        const tocados = new Set<Producto>();
+        const t0 = Date.now();
+        filas.forEach((f, k) => {
+          const tiene = (f as any)._tiene as Record<string, number>;
+          const efectivo = f._efectivo ?? (f._lista ? Math.round(f._lista / (1 + cfg.recargo / 100)) : null);
+          const lista = f._lista && Math.abs(f._lista - (listaAuto(efectivo) || 0)) > 1 ? f._lista : null;
+          const publicar = tiene.publicar === undefined ? true : !['no', 'n', 'false', '0'].includes(norm(f.publicar));
+          const fotos = ['foto1', 'foto2', 'foto3', 'foto4'].map((c) => f[c]).filter((u) => /^https?:\/\//i.test(u));
+          const datosVar: Partial<Variante> = { color: f.color, medida: f.medida, detalle: f.detalle, efectivo, lista, oferta: f.oferta, stock: f.stock.replace(/\D/g, ''), publicar };
+          const existente = f.codigo ? porCodigo.get(f.codigo.toUpperCase()) : undefined;
+          // producto destino según Categoría + Producto + Tela (si el archivo los trae)
+          const destino = (pActual?: Producto) => {
+            const cat = tiene.categoria !== undefined ? f.categoria || pActual?.categoria || 'Sin categoría' : pActual?.categoria || 'Sin categoría';
+            const nom = tiene.producto !== undefined ? f.producto || pActual?.nombre || f.codigo : pActual?.nombre || f.codigo;
+            const tela = tiene.tela !== undefined ? f.tela : pActual?.tela || '';
+            const kc = clave(cat, nom, tela);
+            let p = porClave.get(kc);
+            if (!p) {
+              p = nuevoProducto({ nombre: nom, categoria: cat, tela, creado: t0 + k });
+              base.push(p); porClave.set(kc, p); res.nuevosProd++;
+            }
+            return p;
+          };
+          let p: Producto;
+          if (existente) {
+            const [pe, ve] = existente;
+            // solo se pisan las columnas que vienen en el archivo
+            if (tiene.color !== undefined) ve.color = f.color;
+            if (tiene.medida !== undefined) ve.medida = f.medida;
+            if (tiene.detalle !== undefined) ve.detalle = f.detalle;
+            if (tiene.oferta !== undefined) ve.oferta = f.oferta;
+            if (tiene.stock !== undefined) ve.stock = datosVar.stock!;
+            if (tiene.publicar !== undefined) ve.publicar = publicar;
+            if (tiene.efectivo !== undefined || tiene.lista !== undefined) ve.efectivo = efectivo;
+            if (tiene.lista !== undefined) ve.lista = lista;
+            p = destino(pe);
+            if (p !== pe) {
+              // cambió de producto / categoría / tela: se mueve la variante
+              pe.variantes = pe.variantes.filter((x) => x !== ve);
+              p.variantes.push(ve); porCodigo.set(ve.codigo.toUpperCase(), [p, ve]);
+              tocados.add(pe);
+              if (!pe.variantes.length) { base = base.filter((x) => x !== pe); res.eliminados.push(pe.id); if (pe.fotos.length && !p.fotos.length) p.fotos = pe.fotos; }
+            }
+            res.actualizadas++;
+          } else {
+            p = destino();
+            const v = nuevaVariante({ ...datosVar, codigo: f.codigo });
+            p.variantes.push(v);
+            if (v.codigo) porCodigo.set(v.codigo.toUpperCase(), [p, v]);
+            res.nuevasVar++;
+            if (!f.categoria) res.avisos.push(`Fila ${f._fila}: sin categoría.`);
+          }
+          // datos del producto (solo si vienen en el archivo)
+          if (f.subcategoria) p.subcategoria = f.subcategoria;
+          if (f.descripcion) p.descripcion = f.descripcion;
+          (['peso', 'alto', 'ancho', 'profundidad'] as const).forEach((c) => { if (f[c]) p[c] = f[c]; });
+          fotos.forEach((u) => { if (p.fotos.length < MAX_FOTOS && !p.fotos.some((x) => x.url === u)) p.fotos.push({ id: uid(), url: u }); });
+          p.actualizado = Date.now();
+          tocados.add(p);
+        });
+        // códigos faltantes
+        const usados = new Set(base.flatMap((p) => p.variantes.map((v) => v.codigo.toUpperCase())).filter(Boolean));
+        const prev = productos; productos = base;
+        base.forEach((p) => p.variantes.forEach((v) => { if (!v.codigo) { v.codigo = siguienteCodigo(p.categoria, usados); tocados.add(p); } }));
+        productos = prev;
+        return { base, tocados, res };
+      }
+
+      $('#inpImport').addEventListener('change', async (ev) => {
+        const inp = ev.target as HTMLInputElement; const file = inp.files?.[0]; inp.value = '';
+        if (!file) return;
+        try {
+          const { filas, error } = filasDesde(leerHoja(await file.arrayBuffer(), file.name));
+          if (error) { alert(error); return; }
+          if (!filas.length) { alert('El archivo no tiene filas con productos.'); return; }
+          const reemplazar = (document.querySelector('input[name="modoImport"]:checked') as HTMLInputElement).value === 'reemplazar';
+          const { base, tocados, res } = aplicarImport(filas, reemplazar);
+          const msg = reemplazar
+            ? `Se van a BORRAR los ${productos.length} productos actuales y quedar ${base.length} productos (${filas.length} códigos) del archivo.`
+            : `${filas.length} filas: ${res.actualizadas} códigos se actualizan, ${res.nuevasVar} se agregan (${res.nuevosProd} productos nuevos).`;
+          if (!confirm(msg + (res.avisos.length ? `\n\nAvisos:\n${res.avisos.slice(0, 8).join('\n')}${res.avisos.length > 8 ? '\n…' : ''}` : '') + '\n\n¿Continuar?')) return;
+          if (reemplazar) await dbBorrarTodo();
+          for (const id of res.eliminados) await dbBorrar(id);
+          await dbGuardar(reemplazar ? base : [...tocados].filter((p) => base.includes(p)));
+          productos = base;
+          renderTodo();
+          toast(`Importación lista: ${res.actualizadas} actualizados, ${res.nuevasVar} agregados.`, 5000);
+        } catch (e: any) {
+          alert('No se pudo leer el archivo: ' + (e?.message || e));
+        }
+      });
+
+      // ================================================================
+      // Exportar formato simple
+      // ================================================================
+      function filasSimple(): Record<string, any>[] {
+        return ordenados().flatMap((p) => p.variantes.map((v) => {
+          const urls = p.fotos.map((f) => f.url || '');
+          return {
+            'Código': v.codigo, 'Categoría': p.categoria, 'Subcategoría': p.subcategoria, 'Producto': p.nombre, 'Tela / material': p.tela,
+            'Color': v.color, 'Medida': v.medida, 'Detalle': v.detalle, 'Precio lista': listaDe(v) ?? '', 'Efectivo / transferencia': v.efectivo ?? '',
+            'Oferta': esPrecio(v.oferta) ? numero(v.oferta) : v.oferta, 'Publicar': v.publicar ? 'SI' : 'NO', 'Stock': v.stock, 'Descripción': p.descripcion,
+            'Foto 1': urls[0] || '', 'Foto 2': urls[1] || '', 'Foto 3': urls[2] || '', 'Foto 4': urls[3] || '',
+            'Peso (kg)': p.peso, 'Alto (cm)': p.alto, 'Ancho (cm)': p.ancho, 'Profundidad (cm)': p.profundidad,
+          };
+        }));
+      }
+      function libroSimple(filas: Record<string, any>[], conInstrucciones = false) {
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet(filas, { header: COLUMNAS_SIMPLE });
+        ws['!cols'] = COLUMNAS_SIMPLE.map((c) => ({ wch: ({ 'Producto': 34, 'Descripción': 40, 'Categoría': 20, 'Tela / material': 18, 'Detalle': 24 } as any)[c] || (c.startsWith('Foto') ? 30 : Math.max(9, c.length + 2)) }));
+        ws['!autofilter'] = { ref: `A1:${XLSX.utils.encode_col(COLUMNAS_SIMPLE.length - 1)}${filas.length + 1}` };
+        XLSX.utils.book_append_sheet(wb, ws, 'Lista de precios');
+        if (conInstrucciones) {
+          const ins = [
+            ['Cómo completar la lista de precios'], [''],
+            ['• Una fila por código (cada medida, color o modelo es una fila).'],
+            ['• Las filas con el mismo Producto + Categoría + Tela se agrupan como un solo producto con variantes.'],
+            ['• Obligatorios: Producto, Categoría y Efectivo / transferencia (o Precio lista).'],
+            ['• Código vacío: la app lo genera (ej. ALM-062). Si el código ya existe, la fila actualiza ese producto.'],
+            [`• Precio lista vacío: se calcula como efectivo + ${cfg.recargo}%.`],
+            ['• Oferta: un precio (65000) o un texto (2 x 65000).'],
+            ['• Publicar: SI / NO. Stock vacío = sin límite.'],
+            ['• Foto 1 a 4: links (https://…) a las fotos. También podés subirlas desde la app.'],
+            ['• Precios sin $ ni puntos: 94800 (si los ponés con $ y puntos también se entienden).'],
+          ];
+          const wi = XLSX.utils.aoa_to_sheet(ins); wi['!cols'] = [{ wch: 100 }];
+          XLSX.utils.book_append_sheet(wb, wi, 'Instrucciones');
+        }
+        return wb;
+      }
+      $('#btnExpXlsx').addEventListener('click', () => {
+        if (!productos.length) return toast('No hay productos.');
+        XLSX.writeFile(libroSimple(filasSimple()), `bonte-lista-precios-${fecha()}.xlsx`);
+      });
+      $('#btnExpCsv').addEventListener('click', () => {
+        if (!productos.length) return toast('No hay productos.');
+        const ws = XLSX.utils.json_to_sheet(filasSimple(), { header: COLUMNAS_SIMPLE });
+        descargar(new Blob(['\ufeff' + XLSX.utils.sheet_to_csv(ws)], { type: 'text/csv;charset=utf-8' }), `bonte-lista-precios-${fecha()}.csv`);
+      });
+      $('#btnPlantilla').addEventListener('click', () => {
+        const ejemplo = [{ 'Código': '', 'Categoría': 'Almohadones', 'Subcategoría': '', 'Producto': 'Almohadón Ejemplo', 'Tela / material': 'Lino', 'Color': 'Natural', 'Medida': '50 x 50', 'Detalle': '', 'Precio lista': '', 'Efectivo / transferencia': 36000, 'Oferta': '', 'Publicar': 'SI', 'Stock': '', 'Descripción': 'Funda con cierre y relleno', 'Foto 1': '', 'Foto 2': '', 'Foto 3': '', 'Foto 4': '', 'Peso (kg)': '', 'Alto (cm)': '', 'Ancho (cm)': '', 'Profundidad (cm)': '' }];
+        XLSX.writeFile(libroSimple(ejemplo, true), 'bonte-plantilla-lista-precios.xlsx');
+      });
+      $('#btnExpWeb').addEventListener('click', () => {
+        const prods = ordenados().flatMap((p) => p.variantes.filter((v) => v.publicar).map((v) => ({
+          codigo: v.codigo, categoria: p.categoria, producto: p.nombre, tela: p.tela, color: v.color, medida: v.medida, detalle: v.detalle,
+          lista: listaDe(v), efectivo: v.efectivo, oferta: esPrecio(v.oferta) ? numero(v.oferta) : v.oferta,
+        })));
+        const mes = new Date().toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
+        descargar(new Blob([JSON.stringify({ actualizado: mes[0].toUpperCase() + mes.slice(1), productos: prods }, null, 1)], { type: 'application/json' }), 'lista-precios.json');
+        toast('Este archivo reemplaza src/data/lista-precios.json del sitio.', 5000);
+      });
+
+      // ================================================================
+      // Exportar Tiendanube
+      // ================================================================
+      const escCat = (s: string) => s.trim().replace(/\\/g, '\\\\').replace(/,/g, '\\,').replace(/>/g, '\\>');
+      function descripcionTN(p: Producto, vs: Variante[]) {
+        const partes: string[] = [];
+        if (p.descripcion) partes.push(p.descripcion.split(/\n{2,}/).map((x) => `<p>${esc(x).replace(/\n/g, '<br>')}</p>`).join(''));
+        const datos: [string, string][] = [['Tela', p.tela]];
+        // datos iguales en todas las variantes (no son propiedades en Tiendanube)
+        ([['Color', 'color'], ['Medida', 'medida'], ['Detalle', 'detalle']] as const).forEach(([nom, k]) => {
+          if (new Set(vs.map((v) => norm(v[k]))).size === 1) datos.push([nom, vs[0][k]]);
+        });
+        const li = datos.filter(([, v]) => v).map(([k, v]) => `<li><strong>${k}:</strong> ${esc(v)}</li>`);
+        if (li.length) partes.push(`<ul>${li.join('')}</ul>`);
+        return partes.join('');
+      }
+      function exportarTN() {
+        const usarLista = ($('#tnPrecio') as HTMLSelectElement).value === 'lista';
+        const ofertas = ($('#tnOfertas') as HTMLInputElement).checked;
+        const soloPub = ($('#tnSoloPub') as HTMLInputElement).checked;
+        const filas: Record<string, string>[] = [];
+        const avisos: string[] = [];
+        const slugs = new Set<string>();
+        const nombres = new Map<string, number>();
+        const lista = ordenados().map((p) => ({ p, vs: p.variantes.filter((v) => !soloPub || v.publicar) })).filter((x) => x.vs.length);
+        lista.forEach(({ p }) => nombres.set(norm(p.nombre), (nombres.get(norm(p.nombre)) || 0) + 1));
+        let nProd = 0;
+        lista.forEach(({ p, vs }) => {
+          // propiedades que cambian entre variantes
+          const props = ([['Color', 'color'], ['Medida', 'medida'], ['Modelo', 'detalle']] as const)
+            .filter(([, k]) => vs.length > 1 && new Set(vs.map((v) => norm(v[k]))).size > 1);
+          if (vs.length > 1 && !props.length) { avisos.push(`${p.nombre}: tiene ${vs.length} variantes iguales (sin color/medida/modelo distintos). No se exportó.`); return; }
+          const combos = vs.map((v) => props.map(([, k]) => norm(v[k])).join('|'));
+          if (new Set(combos).size !== combos.length) { avisos.push(`${p.nombre}: hay variantes con la misma combinación de ${props.map((x) => x[0].toLowerCase()).join('/')}. No se exportó.`); return; }
+          let nombre = p.nombre;
+          if ((nombres.get(norm(p.nombre)) || 0) > 1) nombre = [p.nombre, p.tela || p.categoria].filter(Boolean).join(' - ');
+          let slug = slugify(nombre) || slugify(vs[0].codigo); let s2 = slug; let n = 2;
+          while (slugs.has(s2)) s2 = `${slug}-${n++}`;
+          slugs.add(s2);
+          vs.forEach((v, i) => {
+            const f: Record<string, string> = Object.fromEntries(COLUMNAS_TN.map((c) => [c, '']));
+            f['Identificador de URL'] = s2;
+            props.forEach(([nom, k], j) => { f[`Nombre de propiedad ${j + 1}`] = nom; f[`Valor de propiedad ${j + 1}`] = v[k] || 'Único'; });
+            const precio = usarLista ? listaDe(v) : v.efectivo;
+            f['Precio'] = precio ? String(precio) : '';
+            if (!precio) avisos.push(`${v.codigo} (${p.nombre}): sin precio.`);
+            if (ofertas && esPrecio(v.oferta)) {
+              const o = numero(v.oferta)!;
+              if (precio && o < precio) f['Precio promocional'] = String(o);
+            }
+            f['Peso (kg)'] = numero(p.peso) ? String(numero(p.peso)) : '';
+            f['Alto (cm)'] = numero(p.alto) ? String(numero(p.alto)) : '';
+            f['Ancho (cm)'] = numero(p.ancho) ? String(numero(p.ancho)) : '';
+            f['Profundidad (cm)'] = numero(p.profundidad) ? String(numero(p.profundidad)) : '';
+            f['Stock'] = v.stock;
+            f['SKU'] = v.codigo;
+            if (i === 0) {
+              f['Nombre'] = nombre;
+              f['Categorías'] = p.subcategoria ? `${escCat(p.categoria)} > ${escCat(p.subcategoria)}` : escCat(p.categoria);
+              f['Mostrar en tienda'] = vs.some((x) => x.publicar) ? 'SI' : 'NO';
+              f['Envío sin cargo'] = 'NO';
+              f['Descripción'] = descripcionTN(p, vs);
+              f['Tags'] = [p.categoria, p.tela].filter(Boolean).join(', ');
+              f['Marca'] = MARCA;
+              f['Producto Físico'] = 'SI';
+            }
+            filas.push(f);
+          });
+          nProd++;
+        });
+        return { filas, avisos, nProd };
+      }
+      function csv(filas: Record<string, string>[], cols: string[], sep: string) {
+        const celda = (v: string) => { const s = String(v ?? ''); return /["\r\n]/.test(s) || s.includes(sep) || /^\s|\s$/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+        return [cols, ...filas.map((f) => cols.map((c) => f[c]))].map((r) => r.map(celda).join(sep)).join('\r\n') + '\r\n';
+      }
+      $('#btnExpTn').addEventListener('click', () => {
+        if (!productos.length) return toast('No hay productos.');
+        const { filas, avisos, nProd } = exportarTN();
+        if (!filas.length) return alert('No hay nada para exportar.\n\n' + avisos.join('\n'));
+        descargar(new Blob([csv(filas, COLUMNAS_TN, ($('#tnSep') as HTMLSelectElement).value)], { type: 'text/csv;charset=utf-8' }), `tiendanube-productos-${fecha()}.csv`);
+        if (avisos.length) alert(`CSV listo: ${nProd} productos (${filas.length} filas).\n\nPara revisar (${avisos.length}):\n${avisos.slice(0, 25).join('\n')}${avisos.length > 25 ? `\n… y ${avisos.length - 25} más` : ''}`);
+        else toast(`CSV listo: ${nProd} productos (${filas.length} filas).`);
+      });
+
+      $('#btnExpFotos').addEventListener('click', async (ev) => {
+        if (typeof JSZip === 'undefined') return toast('No se pudo cargar la librería ZIP.');
+        const con = ordenados().filter((p) => p.fotos.length);
+        if (!con.length) return toast('Ningún producto tiene fotos todavía.');
+        const btn = ev.currentTarget as HTMLButtonElement; const txt = btn.textContent; btn.disabled = true; btn.textContent = 'Armando ZIP…';
+        try {
+          const zip = new JSZip(); const faltan: string[] = [];
+          for (const p of con) {
+            const base = p.variantes[0]?.codigo || slugify(p.nombre);
+            for (const [i, f] of p.fotos.entries()) {
+              const nom = `${base}-${i + 1}.jpg`;
+              if (f.blob) { zip.file(nom, f.blob); continue; }
+              try { const r = await fetch(f.url!); if (!r.ok) throw 0; zip.file(nom, await r.blob()); }
+              catch { faltan.push(`${nom}\t${p.nombre}\t${f.url}`); }
+            }
+          }
+          if (faltan.length) zip.file('fotos-por-descargar.txt', 'Estas fotos son links que no se pudieron bajar:\n\n' + faltan.join('\n') + '\n');
+          descargar(await zip.generateAsync({ type: 'blob' }), `bonte-fotos-${fecha()}.zip`);
+        } finally { btn.disabled = false; btn.textContent = txt; }
+      });
+
+      // ================================================================
+      // Respaldo, carga inicial, configuración
+      // ================================================================
+      const aDataUrl = (b: Blob) => new Promise<string>((res) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.readAsDataURL(b); });
+      $('#btnBackup').addEventListener('click', async () => {
+        const datos = await Promise.all(productos.map(async (p) => ({ ...p, fotos: await Promise.all(p.fotos.map(async (f) => (f.blob ? { id: f.id, data: await aDataUrl(f.blob) } : { id: f.id, url: f.url }))) })));
+        descargar(new Blob([JSON.stringify({ app: 'bonteapp', version: 1, recargo: cfg.recargo, productos: datos })], { type: 'application/json' }), `bonteapp-respaldo-${fecha()}.json`);
+      });
+      $('#inpBackup').addEventListener('change', async (ev) => {
+        const inp = ev.target as HTMLInputElement; const file = inp.files?.[0]; inp.value = '';
+        if (!file) return;
+        try {
+          const j = JSON.parse(await file.text());
+          if (j.app !== 'bonteapp' || !Array.isArray(j.productos)) throw 0;
+          if (!confirm(`El respaldo tiene ${j.productos.length} productos. Reemplaza lo que hay ahora en este navegador. ¿Continuar?`)) return;
+          const ps: Producto[] = await Promise.all(j.productos.map(async (p: any) => ({ ...nuevoProducto(), ...p, fotos: await Promise.all((p.fotos || []).map(async (f: any) => (f.data ? { id: f.id, blob: await (await fetch(f.data)).blob() } : { id: f.id, url: f.url }))) })));
+          await dbBorrarTodo(); await dbGuardar(ps);
+          productos = ps;
+          if (typeof j.recargo === 'number') guardarRecargo(j.recargo);
+          renderTodo(); toast(`Respaldo restaurado: ${ps.length} productos.`);
+        } catch { alert('Ese archivo no es un respaldo de la Bonté App.'); }
+      });
+      function guardarRecargo(r: number) { cfg.recargo = r; try { localStorage.setItem('bonteapp-recargo', String(r)); } catch {} }
+      $('#cfgRecargo').addEventListener('change', (ev) => {
+        const r = Number((ev.target as HTMLInputElement).value);
+        if (!(r >= 0)) return;
+        guardarRecargo(r); renderTodo(); toast(`Recargo de lista: ${r}%. Los precios de lista automáticos se recalcularon.`);
+      });
+      async function cargarSeed() {
+        const seed = JSON.parse($('#seedDatos').textContent || '{}');
+        const filas: FilaImport[] = seed.productos.map((x: any, i: number) => ({
+          codigo: x.codigo, categoria: x.categoria, subcategoria: '', producto: x.producto, tela: x.tela, color: x.color, medida: x.medida, detalle: x.detalle,
+          oferta: x.oferta === '' || x.oferta == null ? '' : String(x.oferta), publicar: 'SI', stock: '', descripcion: '', foto1: '', foto2: '', foto3: '', foto4: '',
+          peso: '', alto: '', ancho: '', profundidad: '', _lista: x.lista, _efectivo: x.efectivo, _fila: i + 2,
+          _tiene: Object.fromEntries(Object.keys(ALIAS).map((k) => [k, 0])),
+        }));
+        const existentes = productos.length;
+        if (existentes && !confirm(`Ya hay ${existentes} productos. Se van a actualizar los códigos que coincidan y agregar los que falten. ¿Continuar?`)) return;
+        const { base, tocados, res } = aplicarImport(filas, false);
+        for (const id of res.eliminados) await dbBorrar(id);
+        await dbGuardar([...tocados].filter((p) => base.includes(p))); productos = base; renderTodo();
+        toast(`Lista ${seed.actualizado} cargada: ${res.nuevosProd} productos nuevos, ${res.actualizadas} códigos actualizados.`, 5000);
+      }
+      $('#btnSeed').addEventListener('click', cargarSeed);
+      $('#btnSeed2').addEventListener('click', cargarSeed);
+      $('#btnBorrarTodo').addEventListener('click', async () => {
+        if (!productos.length) return;
+        if (!confirm(`¿Borrar los ${productos.length} productos de este navegador? Descargá un respaldo antes.`) || !confirm('¿Seguro? No se puede deshacer.')) return;
+        await dbBorrarTodo(); productos = []; renderTodo(); toast('Se borró todo.');
+      });
+
+      // Inicio
+      (async () => {
+        try { await navigator.storage?.persist?.(); } catch {}
+        try { productos = await dbTodos(); } catch { toast('Este navegador no permite guardar datos (¿modo incógnito?).', 8000); }
+        let t = 'productos'; try { t = localStorage.getItem('bonteapp-tab') || t; } catch {}
+        irA(['productos', 'precios', 'io'].includes(t) ? t : 'productos');
+      })();
+    </script>
+  </body>
+</html>
