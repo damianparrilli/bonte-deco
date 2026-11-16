@@ -22,12 +22,10 @@ import listaInicial from '../data/lista-precios.json';
     <header class="top">
       <div class="wrap top-inner">
         <a href="/bonteapp" class="marca"><img src="/logo.svg" alt="" width="64" height="26" /><span>App</span></a>
-        <nav class="tabs" role="group" aria-label="Secciones">
-          <button type="button" class="tab" data-tab="productos" aria-pressed="true">Productos</button>
-          <button type="button" class="tab" data-tab="precios" aria-pressed="false">Lista de precios</button>
-          <button type="button" class="tab" data-tab="io" aria-pressed="false">Importar / Exportar</button>
+        <nav class="migas" aria-label="Ubicación">
+          <a href="#inicio" id="migaInicio" hidden>← Inicio</a>
+          <strong id="migaActual"></strong>
         </nav>
-        <button type="button" id="btnNuevo" class="btn primary">+ Nuevo producto</button>
         <div class="usuario">
           <span id="estado" class="muted small" aria-live="polite"></span>
           <button type="button" id="btnRecargar" class="btn small" title="Traer los últimos cambios">↻</button>
@@ -55,21 +53,47 @@ import listaInicial from '../data/lista-precios.json';
         <button type="submit" class="btn primary">Guardar contraseña</button>
         <p id="claveMsg" class="msg" hidden></p>
       </form>
-      <div id="noAutorizado" class="acceso-card" hidden>
-        <h1>Sin permiso</h1>
-        <p>El usuario <strong id="naEmail"></strong> no está autorizado para editar productos.</p>
-        <p class="muted small">Pedile al administrador que agregue tu email en la tabla <em>admins</em> de Supabase.</p>
-        <button type="button" class="btn" id="btnSalir2">Salir</button>
-      </div>
       <p id="cargando" class="muted">Cargando…</p>
     </section>
 
     <main class="wrap">
+      <!-- TARJETERO -->
+      <section id="tab-inicio" class="panel">
+        <h1 class="saludo">Hola<span id="saludoNombre"></span></h1>
+        <p class="muted" id="saludoRol"></p>
+        <div class="tarjetero">
+          <a href="#precios" class="tarjeta">
+            <span class="tj-icono" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" /></svg></span>
+            <span class="tj-titulo">Lista de precios</span>
+            <span class="tj-texto">Buscá precios por nombre o código.<span class="solo-admin"> Editá precios y aplicá aumentos.</span></span>
+            <span class="tj-dato" id="tjPrecios"></span>
+          </a>
+          <a href="#productos" class="tarjeta solo-admin">
+            <span class="tj-icono" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></svg></span>
+            <span class="tj-titulo">Productos</span>
+            <span class="tj-texto">Alta, baja y modificación: variantes, fotos y descripciones.</span>
+            <span class="tj-dato" id="tjProductos"></span>
+          </a>
+          <a href="#io" class="tarjeta solo-admin">
+            <span class="tj-icono" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v3h16v-3" /></svg></span>
+            <span class="tj-titulo">Importar / Exportar</span>
+            <span class="tj-texto">Excel y CSV de la lista, exportación a Tiendanube y respaldos.</span>
+            <span class="tj-dato">Excel · CSV · Tiendanube</span>
+          </a>
+          <a href="/precios" target="_blank" rel="noopener" class="tarjeta secundaria">
+            <span class="tj-icono" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6" /></svg></span>
+            <span class="tj-titulo">Lista online ↗</span>
+            <span class="tj-texto">La lista de precios pública que ven los clientes.</span>
+            <span class="tj-dato">bontedeco.netlify.app/precios</span>
+          </a>
+        </div>
+      </section>
+
       <!-- Filtros compartidos por Productos y Lista de precios -->
       <section class="filtros" id="filtros">
         <input type="search" id="buscador" placeholder="Buscar por nombre, código, tela, color o medida…" autocomplete="off" />
         <select id="filtroCat" aria-label="Categoría"><option value="">Todas las categorías</option></select>
-        <select id="filtroEstado" aria-label="Estado">
+        <select id="filtroEstado" aria-label="Estado" class="solo-admin">
           <option value="">Todos</option>
           <option value="sinprecio">Sin precio</option>
           <option value="sinfoto">Sin foto</option>
@@ -80,27 +104,27 @@ import listaInicial from '../data/lista-precios.json';
       </section>
 
       <!-- PRODUCTOS -->
-      <section id="tab-productos" class="panel">
+      <section id="tab-productos" class="panel" hidden>
+        <div class="barra">
+          <p class="muted small">Tocá un producto para editarlo. Cada producto puede tener varias variantes (medida, color o modelo), cada una con su código y precio.</p>
+          <button type="button" id="btnNuevo" class="btn primary">+ Nuevo producto</button>
+        </div>
         <div id="listaProductos" class="lista"></div>
       </section>
 
       <!-- LISTA DE PRECIOS -->
       <section id="tab-precios" class="panel" hidden>
         <div class="barra">
-          <p class="muted small">Editá los precios directo en la tabla: se guardan solos. La lista se calcula como efectivo + <strong id="txtRecargo">20</strong>% salvo que escribas un valor propio.</p>
+          <p class="muted small" id="precioAyuda"></p>
           <div class="barra-acc">
-            <button type="button" class="btn small" id="btnAumento">Aumentar precios…</button>
-            <a class="btn small" href="/precios" target="_blank" rel="noopener">Ver lista online ↗</a>
+            <button type="button" class="btn small solo-editar" id="btnAumento">Aumentar precios…</button>
+            <button type="button" class="btn small" id="btnImprimir">Imprimir</button>
+            <button type="button" class="btn primary solo-admin" id="btnEditar">Editar</button>
           </div>
         </div>
         <div class="tabla-scroll">
           <table class="tabla" id="tablaPrecios">
-            <thead>
-              <tr>
-                <th>Código</th><th>Producto</th><th>Color</th><th>Medida</th><th>Detalle</th>
-                <th class="num">Efectivo / transf.</th><th class="num">Lista</th><th>Oferta</th><th title="Publicar">Pub.</th>
-              </tr>
-            </thead>
+            <thead></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -176,8 +200,8 @@ import listaInicial from '../data/lista-precios.json';
 
       <p id="vacio" class="vacio" hidden>
         Todavía no hay productos cargados.<br />
-        <button type="button" class="btn primary" id="btnSeed2">Cargar la lista de precios {listaInicial.actualizado}</button>
-        <span class="muted small">o importá un Excel desde <em>Importar / Exportar</em>.</span>
+        <button type="button" class="btn primary solo-admin" id="btnSeed2">Cargar la lista de precios {listaInicial.actualizado}</button>
+        <span class="muted small solo-admin">o importá un Excel desde <em>Importar / Exportar</em>.</span>
       </p>
     </main>
 
@@ -290,7 +314,34 @@ import listaInicial from '../data/lista-precios.json';
       .small { font-size: .84rem; }
       .top { background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
       .top-inner { display: flex; gap: 12px 18px; align-items: center; flex-wrap: wrap; padding-top: 10px; padding-bottom: 10px; }
-      body.sin-sesion .tabs, body.sin-sesion #btnNuevo, body.sin-sesion .usuario, body.sin-sesion main { display: none !important; }
+      body.sin-sesion .migas, body.sin-sesion .usuario, body.sin-sesion main { display: none !important; }
+      body:not(.es-admin) .solo-admin, #tab-precios:not(.editando) .solo-editar, #tab-precios.editando #btnImprimir { display: none !important; }
+      .migas { flex: 1; display: flex; align-items: center; gap: 12px; min-width: 0; }
+      .migas a { color: var(--muted); text-decoration: none; font-size: .9rem; white-space: nowrap; }
+      .migas a:hover { color: var(--ink); }
+      .migas strong { font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .saludo { font-size: 1.6rem; margin: 28px 0 4px; }
+      #tab-inicio > p { margin: 0 0 22px; }
+      .tarjetero { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
+      .tarjeta { display: flex; flex-direction: column; gap: 8px; padding: 22px; min-height: 190px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; text-decoration: none; color: inherit; transition: border-color .15s, transform .15s, box-shadow .15s; }
+      .tarjeta:hover, .tarjeta:focus-visible { border-color: var(--brand); transform: translateY(-2px); box-shadow: 0 10px 24px rgba(60, 44, 11, .08); outline: none; }
+      .tarjeta.secundaria { background: transparent; border-style: dashed; }
+      .tj-icono { width: 44px; height: 44px; border-radius: 12px; background: var(--soft); display: grid; place-items: center; margin-bottom: 6px; }
+      .tj-icono svg { width: 22px; height: 22px; fill: none; stroke: var(--brand); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .tj-titulo { font-size: 1.15rem; font-weight: 600; }
+      .tj-texto { color: var(--muted); font-size: .9rem; flex: 1; }
+      .tj-dato { font-size: .82rem; color: var(--brand); font-weight: 500; }
+      .tabla td.precio-ro { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+      .tabla td.precio-ro.fuerte { font-weight: 600; }
+      .tag-oculto { font-size: .7rem; background: #eee; color: #666; border-radius: 999px; padding: 1px 7px; margin-left: 6px; font-weight: 400; }
+      #tab-precios.editando .tabla-scroll { border-color: var(--brand); }
+      @media print {
+        .top, .filtros, .barra, .toast { display: none !important; }
+        body { background: #fff; }
+        .tabla-scroll { border: 0; overflow: visible; }
+        .tabla th { position: static; }
+        .tabla tr { break-inside: avoid; }
+      }
       .usuario { display: flex; gap: 6px; align-items: center; }
       .acceso { min-height: calc(100dvh - 70px); display: grid; place-items: center; padding: 24px 16px; }
       .acceso-card { width: min(380px, 100%); background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 24px; display: flex; flex-direction: column; gap: 14px; }
@@ -302,10 +353,6 @@ import listaInicial from '../data/lista-precios.json';
       .msg.ok { background: #e8f3e8; color: var(--ok); }
       .marca img { filter: brightness(0) opacity(.72); }
       .marca { display: flex; align-items: center; gap: 6px; text-decoration: none; color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; }
-      .tabs { display: flex; gap: 4px; flex: 1; overflow-x: auto; }
-      .tab { border: 0; background: none; font: inherit; padding: 8px 12px; border-radius: 8px; cursor: pointer; color: var(--muted); white-space: nowrap; }
-      .tab:hover { background: var(--soft); }
-      .tab[aria-pressed="true"] { background: var(--soft); color: var(--ink); font-weight: 600; }
       .btn { appearance: none; border: 1px solid var(--line); background: var(--card); color: var(--ink); padding: 8px 14px; border-radius: 8px; cursor: pointer; font: inherit; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; white-space: nowrap; }
       .btn:hover { border-color: var(--brand); }
       .btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
@@ -388,9 +435,22 @@ import listaInicial from '../data/lista-precios.json';
       .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 10px; max-width: calc(100vw - 32px); z-index: 50; box-shadow: 0 8px 24px rgba(0,0,0,.2); white-space: pre-line; }
       @media (max-width: 640px) {
         .top-inner { gap: 8px; }
-        .tabs { order: 3; flex-basis: 100%; }
-        #btnNuevo { margin-left: auto; padding: 6px 10px; }
         #estado { display: none; }
+        .tarjetero { grid-template-columns: 1fr; gap: 12px; }
+        /* lista en modo lectura: filas tipo tarjeta */
+        #tab-precios:not(.editando) .tabla thead { display: none; }
+        #tab-precios:not(.editando) .tabla, #tab-precios:not(.editando) .tabla tbody { display: block; }
+        #tab-precios:not(.editando) .tabla tr { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; padding: 10px 14px; border-bottom: 1px solid #f0ebe2; }
+        #tab-precios:not(.editando) .tabla td { padding: 0; border: 0; }
+        #tab-precios:not(.editando) .tabla td:empty { display: none; }
+        #tab-precios:not(.editando) .tabla td.prod { order: 1; flex: 1 1 0; min-width: 0; }
+        #tab-precios:not(.editando) .tabla td.cod { order: 2; }
+        #tab-precios:not(.editando) .tabla td.det { order: 3; flex: 1 1 100%; font-size: .85rem; }
+        #tab-precios:not(.editando) .tabla td[data-l] { order: 4; text-align: left; margin-top: 4px; }
+        #tab-precios:not(.editando) .tabla td[data-l]::before { content: attr(data-l); display: block; font-size: .66rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 500; }
+        .migas strong { max-width: 38vw; }
+        .tarjeta { min-height: 0; padding: 18px; }
+        .saludo { margin-top: 18px; }
         .fotos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .lista { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
         .cards { grid-template-columns: 1fr; }
@@ -633,7 +693,9 @@ const uid = (): string => (crypto.randomUUID ? crypto.randomUUID() : '10000000-1
       // ================================================================
       // Render: filtros, productos, lista de precios
       // ================================================================
-      let tab = 'productos';
+      let tab = 'inicio';
+      let esAdmin = false;
+      let modoEditar = false;
       const filtro = () => ({ q: norm(($('#buscador') as HTMLInputElement).value), cat: ($('#filtroCat') as HTMLSelectElement).value, estado: ($('#filtroEstado') as HTMLSelectElement).value });
       const textoBusqueda = (p: Producto, v?: Variante) => norm([p.nombre, p.categoria, p.subcategoria, p.tela, ...(v ? [v.codigo, v.color, v.medida, v.detalle] : p.variantes.flatMap((x) => [x.codigo, x.color, x.medida, x.detalle]))].join(' '));
       function pasaFiltro(p: Producto, v?: Variante) {
@@ -659,12 +721,12 @@ const uid = (): string => (crypto.randomUUID ? crypto.randomUUID() : '10000000-1
         $('#dlCategorias').innerHTML = cats.map((c) => `<option value="${esc(c)}">`).join('');
         $('#dlSubcategorias').innerHTML = [...new Set(productos.map((p) => p.subcategoria).filter(Boolean))].map((c) => `<option value="${esc(c)}">`).join('');
         $('#dlTelas').innerHTML = [...new Set(productos.map((p) => p.tela).filter(Boolean))].sort().map((c) => `<option value="${esc(c)}">`).join('');
-        $('#vacio').hidden = productos.length > 0 || tab === 'io';
-        $('#filtros').hidden = tab === 'io' || !productos.length;
+        $('#vacio').hidden = productos.length > 0 || tab === 'io' || tab === 'inicio';
+        $('#filtros').hidden = tab === 'io' || tab === 'inicio' || !productos.length;
+        if (tab === 'inicio') renderInicio();
         if (tab === 'productos') renderProductos();
         if (tab === 'precios') renderPrecios();
         const nVar = productos.reduce((a, p) => a + p.variantes.length, 0);
-        $('#txtRecargo').textContent = String(cfg.recargo);
         const tip = `En Tiendanube podés configurar un descuento del ${(100 - 10000 / (100 + cfg.recargo)).toFixed(2).replace('.', ',')}% para pagos por transferencia: así el precio con descuento coincide con el de efectivo.`;
         $('#tnTip').textContent = tip;
         ($('#cfgRecargo') as HTMLInputElement).value = String(cfg.recargo);
@@ -692,12 +754,41 @@ const uid = (): string => (crypto.randomUUID ? crypto.randomUUID() : '10000000-1
         }).join('');
       }
 
+      function renderInicio() {
+        const nVar = productos.reduce((a, p) => a + p.variantes.length, 0);
+        const ultima = Math.max(0, ...productos.map((p) => p.actualizado || 0));
+        $('#tjPrecios').textContent = nVar ? `${nVar} códigos${ultima ? ' · actualizada el ' + new Date(ultima).toLocaleDateString('es-AR') : ''}` : 'Sin precios cargados';
+        const sinFoto = productos.filter((p) => !p.fotos.length).length;
+        const sinPre = productos.filter(sinPrecio).length;
+        $('#tjProductos').textContent = `${productos.length} productos` + (sinFoto ? ` · ${sinFoto} sin foto` : '') + (sinPre ? ` · ${sinPre} sin precio` : '');
+      }
+
       function renderPrecios() {
+        const sec = $('#tab-precios');
+        sec.classList.toggle('editando', modoEditar);
+        $('#btnEditar').textContent = modoEditar ? 'Listo' : 'Editar';
+        $('#precioAyuda').innerHTML = modoEditar
+          ? `Modo edición: cambiá los precios en la tabla y se guardan solos. La lista se calcula como efectivo + ${cfg.recargo}% salvo que escribas un valor propio.`
+          : `Precios en pesos. Lista = efectivo / transferencia + ${cfg.recargo}%.`;
         const filas: [Producto, Variante][] = [];
         ordenados().forEach((p) => p.variantes.forEach((v) => { if (pasaFiltro(p, v)) filas.push([p, v]); }));
         const total = productos.reduce((a, p) => a + p.variantes.length, 0);
         $('#resumen').textContent = `${filas.length} de ${total} códigos`;
         const LIM = 600;
+        const extra = filas.length > LIM ? `<tr><td colspan="9" class="muted">Se muestran ${LIM} de ${filas.length}. Usá el buscador para ver el resto.</td></tr>` : '';
+        if (!modoEditar) {
+          $('#tablaPrecios thead').innerHTML = '<tr><th>Código</th><th>Producto</th><th>Color</th><th>Medida</th><th>Detalle</th><th class="num">Efectivo / transf.</th><th class="num">Lista</th><th>Oferta</th></tr>';
+          $('#tablaPrecios tbody').innerHTML = filas.slice(0, LIM).map(([p, v]) => `<tr class="${v.publicar ? '' : 'oculto'}">
+            <td class="cod">${esc(v.codigo)}</td>
+            <td class="prod">${esAdmin ? `<a data-abrir="${p.id}">${esc(p.nombre)}</a>` : `<strong>${esc(p.nombre)}</strong>`}${v.publicar ? '' : '<span class="tag-oculto">no publicado</span>'}<small>${esc([p.categoria, p.tela].filter(Boolean).join(' · '))}</small></td>
+            <td class="det">${esc(v.color)}</td><td class="det">${esc(v.medida)}</td><td class="det">${esc(v.detalle)}</td>
+            <td class="precio-ro fuerte" data-l="Efectivo / transf.">${v.efectivo ? pesos(v.efectivo) : 'Consultar'}</td>
+            <td class="precio-ro" data-l="Lista">${pesos(listaDe(v))}</td>
+            <td class="of" data-l="Oferta">${esPrecio(v.oferta) ? pesos(numero(v.oferta)) : esc(v.oferta)}</td>
+          </tr>`).join('') + extra;
+          return;
+        }
+        $('#tablaPrecios thead').innerHTML = '<tr><th>Código</th><th>Producto</th><th>Color</th><th>Medida</th><th>Detalle</th><th class="num">Efectivo / transf.</th><th class="num">Lista</th><th>Oferta</th><th title="Publicar">Pub.</th></tr>';
         $('#tablaPrecios tbody').innerHTML = filas.slice(0, LIM).map(([p, v]) => `<tr data-p="${p.id}" data-v="${v.id}" class="${v.publicar ? '' : 'oculto'}">
             <td class="cod">${esc(v.codigo)}</td>
             <td class="prod"><a data-abrir="${p.id}">${esc(p.nombre)}</a><small>${esc([p.categoria, p.tela].filter(Boolean).join(' · '))}</small></td>
@@ -706,8 +797,15 @@ const uid = (): string => (crypto.randomUUID ? crypto.randomUUID() : '10000000-1
             <td class="num"><input class="precio" data-k="lista" inputmode="decimal" value="${esc(textoPrecio(v.lista))}" placeholder="${esc(textoPrecio(listaAuto(v.efectivo)))}" aria-label="Precio lista ${esc(v.codigo)}"></td>
             <td><input class="oferta" data-k="oferta" value="${esc(v.oferta)}" aria-label="Oferta ${esc(v.codigo)}"></td>
             <td><input type="checkbox" data-k="publicar" ${v.publicar ? 'checked' : ''} aria-label="Publicar ${esc(v.codigo)}"></td>
-          </tr>`).join('') + (filas.length > LIM ? `<tr><td colspan="9" class="muted">Se muestran ${LIM} de ${filas.length}. Usá el buscador para ver el resto.</td></tr>` : '');
+          </tr>`).join('') + extra;
       }
+      $('#btnEditar').addEventListener('click', () => {
+        if (!esAdmin) return;
+        modoEditar = !modoEditar;
+        renderPrecios();
+        if (modoEditar) ($('#tablaPrecios tbody input[data-k=efectivo]') as HTMLInputElement)?.focus();
+      });
+      $('#btnImprimir').addEventListener('click', () => print());
 
       // Edición en línea de la lista de precios (se guarda sola)
       const pendientes = new Set<Producto>();
@@ -749,14 +847,24 @@ const uid = (): string => (crypto.randomUUID ? crypto.randomUUID() : '10000000-1
       });
 
       // Pestañas y filtros
+      const SECCIONES: Record<string, string> = { inicio: '', precios: 'Lista de precios', productos: 'Productos', io: 'Importar / Exportar' };
       function irA(t: string) {
+        if (!(t in SECCIONES) || (!esAdmin && t !== 'precios')) t = 'inicio';
+        if (t !== tab) {
+          modoEditar = false;
+          ($('#buscador') as HTMLInputElement).value = ''; ($('#filtroEstado') as HTMLSelectElement).value = '';
+        }
         tab = t;
-        document.querySelectorAll<HTMLElement>('.tab').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tab === t)));
-        ['productos', 'precios', 'io'].forEach((x) => ($('#tab-' + x).hidden = x !== t));
-        try { localStorage.setItem('bonteapp-tab', t); } catch {}
+        Object.keys(SECCIONES).forEach((x) => ($('#tab-' + x).hidden = x !== t));
+        $('#migaInicio').hidden = t === 'inicio';
+        $('#migaActual').textContent = SECCIONES[t];
+        const h = t === 'inicio' ? location.pathname : '#' + t;
+        if ((location.hash || '') !== (t === 'inicio' ? '' : '#' + t)) history.replaceState(null, '', h);
+        document.title = (SECCIONES[t] ? SECCIONES[t] + ' · ' : '') + 'Bonté App';
         renderTodo();
+        scrollTo(0, 0);
       }
-      document.querySelectorAll<HTMLElement>('.tab').forEach((b) => b.addEventListener('click', () => irA(b.dataset.tab!)));
+      addEventListener('hashchange', () => { if (!document.body.classList.contains('sin-sesion')) irA(location.hash.slice(1) || 'inicio'); });
       let tBus: any;
       $('#buscador').addEventListener('input', () => { clearTimeout(tBus); tBus = setTimeout(renderTodo, 120); });
       $('#filtroCat').addEventListener('change', renderTodo);
@@ -777,6 +885,7 @@ const uid = (): string => (crypto.randomUUID ? crypto.randomUUID() : '10000000-1
       let esNuevo = true;
 
       function abrir(p?: Producto, copia = false) {
+        if (!esAdmin) return;
         esNuevo = !p || copia;
         editando = p ? structuredClone(p) : nuevoProducto({ variantes: [nuevaVariante()] });
         if (copia) {
@@ -1305,7 +1414,7 @@ const uid = (): string => (crypto.randomUUID ? crypto.randomUUID() : '10000000-1
       const vista = (id: string) => {
         document.body.classList.add('sin-sesion');
         $('#acceso').hidden = false;
-        ['formLogin', 'formClave', 'noAutorizado', 'cargando'].forEach((x) => ($('#' + x).hidden = x !== id));
+        ['formLogin', 'formClave', 'cargando'].forEach((x) => ($('#' + x).hidden = x !== id));
       };
       const mensaje = (el: string, txt: string, ok = false) => { const m = $(el); m.textContent = txt; m.classList.toggle('ok', ok); m.hidden = !txt; };
       const traducir = (msg: string) => /invalid login/i.test(msg) ? 'Email o contraseña incorrectos.' : /not confirmed/i.test(msg) ? 'Tenés que confirmar tu email (revisá tu correo).' : /rate limit|too many/i.test(msg) ? 'Demasiados intentos. Esperá unos minutos.' : /should be at least|weak/i.test(msg) ? 'La contraseña es muy corta o débil (mínimo 8 caracteres).' : /same.*password|different from the old/i.test(msg) ? 'Usá una contraseña distinta a la anterior.' : /Failed to fetch|network/i.test(msg) ? 'No hay conexión a internet.' : msg;
@@ -1314,16 +1423,19 @@ const uid = (): string => (crypto.randomUUID ? crypto.randomUUID() : '10000000-1
         vista('cargando');
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return vista('formLogin');
-        const { data: ok, error } = await supabase.rpc('es_admin');
-        if (error || !ok) { $('#naEmail').textContent = user.email || ''; return vista('noAutorizado'); }
+        const { data: ok } = await supabase.rpc('es_admin');
+        esAdmin = ok === true;
+        document.body.classList.toggle('es-admin', esAdmin);
+        const nombre = (user.email || '').split('@')[0];
+        $('#saludoNombre').textContent = nombre ? ', ' + nombre.charAt(0).toUpperCase() + nombre.slice(1) : '';
+        $('#saludoRol').textContent = esAdmin ? '¿Qué querés hacer hoy?' : 'Podés consultar la lista de precios. Para editar, pedile acceso a un administrador.';
         try { productos = await dbTodos(); }
         catch (e: any) { toast('No se pudieron cargar los productos: ' + traducir(e?.message || ''), 8000); productos = []; }
         $('#btnSalir').title = `Salir (${user.email})`;
         estado(user.email || '');
         $('#acceso').hidden = true;
         document.body.classList.remove('sin-sesion');
-        let t = 'productos'; try { t = localStorage.getItem('bonteapp-tab') || t; } catch {}
-        irA(['productos', 'precios', 'io'].includes(t) ? t : 'productos');
+        irA(location.hash.slice(1) || 'inicio');
       }
 
       $('#formLogin').addEventListener('submit', async (ev) => {
@@ -1355,7 +1467,6 @@ const uid = (): string => (crypto.randomUUID ? crypto.randomUUID() : '10000000-1
       });
       const salir = async () => { await supabase.auth.signOut(); location.replace(location.pathname); };
       $('#btnSalir').addEventListener('click', salir);
-      $('#btnSalir2').addEventListener('click', salir);
       $('#btnRecargar').addEventListener('click', async () => {
         if (pendientes.size || guardando) return toast('Esperá a que se terminen de guardar los cambios.');
         try { productos = await dbTodos(); renderTodo(); toast('Datos actualizados ✓', 1500); } catch (e: any) { toast('No se pudo actualizar: ' + traducir(e?.message || '')); }
