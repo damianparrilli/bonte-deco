@@ -1,7 +1,8 @@
 # Bonté App + Supabase
 
-La app de productos (`/bonteapp`) y la lista de precios online (`/precios`)
-usan Supabase como base de datos, login de usuarios y almacenamiento de fotos.
+La Bonté App (`/bonteapp`) usa Supabase como base de datos, login de usuarios
+y almacenamiento de fotos. La lista de precios es de uso interno: hace falta
+iniciar sesión para verla (`/precios` redirige a la app).
 
 ## Instalación (una sola vez)
 
@@ -22,9 +23,9 @@ usan Supabase como base de datos, login de usuarios y almacenamiento de fotos.
 
 Hay dos tipos de usuario:
 
-- **Consulta** (por ejemplo, ventas): solo ve la *Lista de precios* en la app, sin poder editar.
+- **Consulta** (por ejemplo, ventas): solo ve la *Lista de precios*, sin el botón *Editar*.
   Para crearlo: Authentication → Users → **Invite user** con su email. Nada más.
-- **Admin**: ve todos los accesos del tarjetero (Lista de precios con botón *Editar*,
+- **Admin**: ve todos los accesos del tarjetero (Lista de precios con el botón *Editar*,
   Productos e Importar / Exportar). Además de invitarlo, agregá su email en SQL Editor:
   `insert into public.admins (email) values ('persona@mail.com');`
 
@@ -33,7 +34,7 @@ Para quitarle todo acceso: Authentication → Users → borrar el usuario.
 
 ## Seguridad
 
-- Cualquiera puede **leer** productos y variantes publicadas (es la lista de precios pública).
+- Solo usuarios **logueados** pueden leer la lista (los visitantes no ven nada).
 - Solo los emails de la tabla `admins` pueden crear, editar o borrar productos y fotos.
 - La clave `sb_publishable_…` está en el código a propósito: es pública.
   **Nunca** pongas la clave secreta (`sb_secret_…` / `service_role`) en el sitio.
