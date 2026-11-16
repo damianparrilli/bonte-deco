@@ -1,14 +1,10 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import datos from '../data/lista-precios.json';
+import { SUPABASE_URL, SUPABASE_KEY } from '../lib/supabase-config';
 
-// ---------------------------------------------------------------------------
-// Para que la lista se actualice sola desde Google Sheets:
-// en la planilla, Archivo → Compartir → Publicar en la web → hoja
-// "Lista de precios" → formato CSV, y pegá el link acá.
-// Si queda vacío, se usa la lista guardada en src/data/lista-precios.json.
-// ---------------------------------------------------------------------------
-const GOOGLE_SHEET_CSV = '';
+// La lista se lee en vivo de Supabase (lo que se carga en /bonteapp).
+// Si la base no responde, se muestra la copia de src/data/lista-precios.json.
 const WHATSAPP = '541155630343';
 ---
 
@@ -40,7 +36,7 @@ const WHATSAPP = '541155630343';
   </div>
 
   <script is:inline type="application/json" id="lpDatos" set:html={JSON.stringify(datos)} />
-  <script is:inline define:vars={{ GOOGLE_SHEET_CSV, WHATSAPP }}>
+  <script is:inline define:vars={{ SUPABASE_URL, SUPABASE_KEY, WHATSAPP }}>
     (function () {
       const $ = (id) => document.getElementById(id);
       const base = JSON.parse($('lpDatos').textContent);
@@ -150,61 +146,46 @@ const WHATSAPP = '541155630343';
       categoria = params.get('cat') || '';
       renderCats(); render();
 
-      // ---------- lista en vivo desde Google Sheets (opcional) ----------
-      function parseCsv(txt) {
-        const filas = []; let fila = []; let celda = ''; let comillas = false;
-        for (let i = 0; i < txt.length; i++) {
-          const c = txt[i];
-          if (comillas) {
-            if (c === '"' && txt[i + 1] === '"') { celda += '"'; i++; }
-            else if (c === '"') comillas = false;
-            else celda += c;
-          } else if (c === '"') comillas = true;
-          else if (c === ',') { fila.push(celda); celda = ''; }
-          else if (c === '\n' || c === '\r') {
-            if (c === '\r' && txt[i + 1] === '\n') i++;
-            fila.push(celda); filas.push(fila); fila = []; celda = '';
-          } else celda += c;
-        }
-        if (celda || fila.length) { fila.push(celda); filas.push(fila); }
-        return filas;
-      }
-      const numero = (s) => {
-        // acepta "$ 94.800", "$94,800", "94800", "94800.50" y "94.800,50"
-        let t = String(s ?? '').replace(/[^\d.,]/g, '');
-        const dec = t.match(/[.,](\d{1,2})$/);
-        t = dec ? t.slice(0, -dec[0].length).replace(/[.,]/g, '') + '.' + dec[1] : t.replace(/[.,]/g, '');
-        const n = Number(t);
-        return t && Number.isFinite(n) && n > 0 ? n : null;
-      };
-      async function cargarSheet() {
-        if (!GOOGLE_SHEET_CSV) return;
+      // ---------- lista en vivo desde Supabase ----------
+      async function cargarEnVivo() {
         try {
-          const res = await fetch(GOOGLE_SHEET_CSV, { cache: 'no-store' });
-          if (!res.ok) throw new Error(res.status);
-          const [enc, ...filas] = parseCsv(await res.text());
-          const col = (nombre) => enc.findIndex((h) => norm(h).startsWith(norm(nombre)));
-          const C = { codigo: col('codigo'), categoria: col('categoria'), producto: col('producto'), tela: col('tela'), color: col('color'),
-            medida: col('medida'), detalle: col('detalle'), lista: col('precio lista'), efectivo: col('efectivo'), oferta: col('oferta'), publicar: col('publicar') };
-          if (C.producto < 0 || C.efectivo < 0) throw new Error('encabezados');
-          const v = (f, k) => (C[k] >= 0 ? String(f[C[k]] ?? '').trim() : '');
-          const nuevos = filas
-            .filter((f) => v(f, 'producto') && norm(v(f, 'publicar')) !== 'no')
-            .map((f) => indexar({
-              codigo: v(f, 'codigo'), categoria: v(f, 'categoria') || 'Otros', producto: v(f, 'producto'), tela: v(f, 'tela'),
-              color: v(f, 'color'), medida: v(f, 'medida'), detalle: v(f, 'detalle'),
-              lista: numero(v(f, 'lista')), efectivo: numero(v(f, 'efectivo')),
-              oferta: /^[\s$\d.,]+$/.test(v(f, 'oferta')) ? numero(v(f, 'oferta')) ?? '' : v(f, 'oferta'),
-            }));
-          if (!nuevos.length) return;
-          productos = nuevos;
-          $('lpFecha').textContent = 'Actualizada';
+          const h = { apikey: SUPABASE_KEY };
+          const filas = [];
+          for (let desde = 0; ; desde += 1000) {
+            const url = `${SUPABASE_URL}/rest/v1/variantes?select=codigo,color,medida,detalle,efectivo,lista,oferta,orden,productos(nombre,categoria,tela,orden,actualizado)&publicar=eq.true&order=id&offset=${desde}&limit=1000`;
+            const res = await fetch(url, { headers: h, cache: 'no-store' });
+            if (!res.ok) throw new Error(res.status);
+            const lote = await res.json();
+            filas.push(...lote);
+            if (lote.length < 1000) break;
+          }
+          if (!filas.length) return;
+          let recargo = 20;
+          try {
+            const rc = await fetch(`${SUPABASE_URL}/rest/v1/config?select=valor&clave=eq.recargo`, { headers: h });
+            const [c] = await rc.json();
+            if (c && Number(c.valor) >= 0) recargo = Number(c.valor);
+          } catch {}
+          filas.sort((a, b) => (a.productos.orden - b.productos.orden) || (a.orden - b.orden));
+          let ultima = 0;
+          productos = filas.map((v) => {
+            ultima = Math.max(ultima, Date.parse(v.productos.actualizado) || 0);
+            const efectivo = v.efectivo == null ? null : Number(v.efectivo);
+            const oferta = /^[\s$\d.,]+$/.test(v.oferta || '') && Number(String(v.oferta).replace(/\D/g, '')) ? Number(String(v.oferta).replace(/\D/g, '')) : (v.oferta || '');
+            return indexar({
+              codigo: v.codigo, categoria: v.productos.categoria || 'Otros', producto: v.productos.nombre, tela: v.productos.tela,
+              color: v.color, medida: v.medida, detalle: v.detalle, efectivo,
+              lista: v.lista != null ? Number(v.lista) : efectivo ? Math.round(efectivo * (1 + recargo / 100)) : null,
+              oferta,
+            });
+          });
+          if (ultima) $('lpFecha').textContent = 'Actualizada el ' + new Date(ultima).toLocaleDateString('es-AR');
           renderCats(); render();
         } catch (e) {
-          console.warn('No se pudo leer la planilla de precios; se muestra la lista guardada.', e);
+          console.warn('No se pudo leer la lista en vivo; se muestra la copia guardada.', e);
         }
       }
-      cargarSheet();
+      cargarEnVivo();
     })();
   </script>
 

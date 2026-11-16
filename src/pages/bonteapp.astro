@@ -1,8 +1,8 @@
 ---
 // Bonté App: ABM de productos + lista de precios + importar/exportar
 // (formato simple y formato de importación de Tiendanube).
-// Todo funciona en el navegador: los datos se guardan en este dispositivo
-// (IndexedDB). Para pasarlos a otra compu: Importar / Exportar → Respaldo.
+// Los datos, usuarios y fotos viven en Supabase (ver src/lib/supabase.ts y
+// supabase/instalar.sql). Solo los emails de la tabla "admins" pueden editar.
 import listaInicial from '../data/lista-precios.json';
 ---
 
@@ -14,10 +14,11 @@ import listaInicial from '../data/lista-precios.json';
     <meta name="robots" content="noindex, nofollow" />
     <title>Bonté App</title>
     <link rel="icon" href="/favicon.svg" />
+    <script is:inline>window.__bonteHash = location.hash;</script>
     <script is:inline src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script is:inline src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   </head>
-  <body>
+  <body class="sin-sesion">
     <header class="top">
       <div class="wrap top-inner">
         <a href="/bonteapp" class="marca"><img src="/logo.svg" alt="" width="64" height="26" /><span>App</span></a>
@@ -27,8 +28,41 @@ import listaInicial from '../data/lista-precios.json';
           <button type="button" class="tab" data-tab="io" aria-pressed="false">Importar / Exportar</button>
         </nav>
         <button type="button" id="btnNuevo" class="btn primary">+ Nuevo producto</button>
+        <div class="usuario">
+          <span id="estado" class="muted small" aria-live="polite"></span>
+          <button type="button" id="btnRecargar" class="btn small" title="Traer los últimos cambios">↻</button>
+          <button type="button" id="btnSalir" class="btn small" title="">Salir</button>
+        </div>
       </div>
     </header>
+
+    <!-- Login -->
+    <section id="acceso" class="acceso" hidden>
+      <form id="formLogin" class="acceso-card">
+        <img src="/logo.svg" alt="Bonté" width="120" height="50" class="acceso-logo" />
+        <h1>Ingresar</h1>
+        <label>Email <input type="email" name="email" required autocomplete="username" /></label>
+        <label>Contraseña <input type="password" name="password" required autocomplete="current-password" /></label>
+        <button type="submit" class="btn primary">Ingresar</button>
+        <button type="button" class="link" id="btnOlvide">Olvidé mi contraseña</button>
+        <p id="loginMsg" class="msg" hidden></p>
+      </form>
+      <form id="formClave" class="acceso-card" hidden>
+        <h1>Elegí tu contraseña</h1>
+        <p class="muted small" id="claveEmail"></p>
+        <label>Nueva contraseña <input type="password" name="clave" minlength="8" required autocomplete="new-password" /></label>
+        <label>Repetila <input type="password" name="clave2" minlength="8" required autocomplete="new-password" /></label>
+        <button type="submit" class="btn primary">Guardar contraseña</button>
+        <p id="claveMsg" class="msg" hidden></p>
+      </form>
+      <div id="noAutorizado" class="acceso-card" hidden>
+        <h1>Sin permiso</h1>
+        <p>El usuario <strong id="naEmail"></strong> no está autorizado para editar productos.</p>
+        <p class="muted small">Pedile al administrador que agregue tu email en la tabla <em>admins</em> de Supabase.</p>
+        <button type="button" class="btn" id="btnSalir2">Salir</button>
+      </div>
+      <p id="cargando" class="muted">Cargando…</p>
+    </section>
 
     <main class="wrap">
       <!-- Filtros compartidos por Productos y Lista de precios -->
@@ -120,7 +154,7 @@ import listaInicial from '../data/lista-precios.json';
 
           <article class="card-io">
             <h2>Respaldo</h2>
-            <p class="muted">Los datos se guardan solo en este navegador. Descargá un respaldo seguido (incluye fotos) para no perder nada o para seguir en otra compu.</p>
+            <p class="muted">Todo queda guardado en la base de datos online. Igual conviene bajar un respaldo cada tanto (las fotos van como links).</p>
             <div class="acc">
               <button type="button" class="btn primary" id="btnBackup">Descargar respaldo</button>
               <label class="btn">Restaurar respaldo…<input type="file" id="inpBackup" accept=".json,application/json" hidden /></label>
@@ -134,7 +168,6 @@ import listaInicial from '../data/lista-precios.json';
             </label>
             <div class="acc">
               <button type="button" class="btn" id="btnSeed">Cargar lista de precios {listaInicial.actualizado}</button>
-              <button type="button" class="btn" id="btnExpWeb">Exportar JSON para la web</button>
               <button type="button" class="btn danger-outline" id="btnBorrarTodo">Borrar todo</button>
             </div>
           </article>
@@ -142,7 +175,7 @@ import listaInicial from '../data/lista-precios.json';
       </section>
 
       <p id="vacio" class="vacio" hidden>
-        Todavía no hay productos en este navegador.<br />
+        Todavía no hay productos cargados.<br />
         <button type="button" class="btn primary" id="btnSeed2">Cargar la lista de precios {listaInicial.actualizado}</button>
         <span class="muted small">o importá un Excel desde <em>Importar / Exportar</em>.</span>
       </p>
@@ -257,6 +290,16 @@ import listaInicial from '../data/lista-precios.json';
       .small { font-size: .84rem; }
       .top { background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
       .top-inner { display: flex; gap: 12px 18px; align-items: center; flex-wrap: wrap; padding-top: 10px; padding-bottom: 10px; }
+      body.sin-sesion .tabs, body.sin-sesion #btnNuevo, body.sin-sesion .usuario, body.sin-sesion main { display: none !important; }
+      .usuario { display: flex; gap: 6px; align-items: center; }
+      .acceso { min-height: calc(100dvh - 70px); display: grid; place-items: center; padding: 24px 16px; }
+      .acceso-card { width: min(380px, 100%); background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 24px; display: flex; flex-direction: column; gap: 14px; }
+      .acceso-card h1 { margin: 0; font-size: 1.3rem; }
+      .acceso-card p { margin: 0; }
+      .acceso-logo { filter: brightness(0) opacity(.72); align-self: center; height: auto; }
+      .link { background: none; border: 0; color: var(--muted); font: inherit; font-size: .85rem; cursor: pointer; text-decoration: underline; padding: 0; align-self: center; }
+      .msg { font-size: .88rem; padding: 8px 10px; border-radius: 8px; background: #fdecea; color: var(--danger); }
+      .msg.ok { background: #e8f3e8; color: var(--ok); }
       .marca img { filter: brightness(0) opacity(.72); }
       .marca { display: flex; align-items: center; gap: 6px; text-decoration: none; color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; }
       .tabs { display: flex; gap: 4px; flex: 1; overflow-x: auto; }
@@ -347,6 +390,7 @@ import listaInicial from '../data/lista-precios.json';
         .top-inner { gap: 8px; }
         .tabs { order: 3; flex-basis: 100%; }
         #btnNuevo { margin-left: auto; padding: 6px 10px; }
+        #estado { display: none; }
         .fotos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .lista { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
         .cards { grid-template-columns: 1fr; }
@@ -382,38 +426,117 @@ import listaInicial from '../data/lista-precios.json';
       type Foto = { id: string; url?: string; blob?: Blob };
       type Variante = { id: string; codigo: string; color: string; medida: string; detalle: string; efectivo: number | null; lista: number | null; oferta: string; stock: string; publicar: boolean };
       type Producto = { id: string; creado: number; actualizado: number; nombre: string; categoria: string; subcategoria: string; tela: string; descripcion: string; fotos: Foto[]; variantes: Variante[]; peso: string; alto: string; ancho: string; profundidad: string };
+      import { supabase } from '../lib/supabase';
       declare const XLSX: any;
       declare const JSZip: any;
 
       // ================================================================
-      // Almacenamiento (IndexedDB)
+      // Base de datos (Supabase)
       // ================================================================
-      let dbp: Promise<IDBDatabase> | null = null;
-      const db = () => (dbp ??= new Promise((res, rej) => {
-        const r = indexedDB.open('bonte-app', 1);
-        r.onupgradeneeded = () => r.result.createObjectStore('productos', { keyPath: 'id' });
-        r.onsuccess = () => res(r.result);
-        r.onerror = () => rej(r.error);
-      }));
-      async function tx<T>(modo: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T> | void): Promise<T> {
-        const d = await db();
-        return new Promise((res, rej) => {
-          const t = d.transaction('productos', modo);
-          const r = fn(t.objectStore('productos'));
-          t.oncomplete = () => res(r ? (r as IDBRequest<T>).result : (undefined as T));
-          t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
-        });
+      // Variantes y fotos que hay en la base por producto (para saber qué borrar al guardar)
+      const remotoVar = new Map<string, Set<string>>();
+      const remotoFotos = new Map<string, string[]>();
+      const BUCKET = 'fotos';
+      const pathDeUrl = (url = '') => { const m = url.match(/\/storage\/v1\/object\/public\/fotos\/(.+)$/); return m ? decodeURIComponent(m[1]) : null; };
+      let guardando = 0;
+      function estado(txt: string) { $('#estado').textContent = txt; }
+      function errorDb(e: any, accion: string): never {
+        const msg = String(e?.message || e || '');
+        const amigable = /duplicate key|23505/.test(msg) ? 'hay un código repetido.' : /row-level security|permission|42501|JWT|401|403/.test(msg) ? 'tu usuario no tiene permiso o la sesión venció (volvé a ingresar).' : /Failed to fetch|NetworkError|network/i.test(msg) ? 'no hay conexión a internet.' : msg;
+        estado('Error al guardar');
+        toast(`No se pudo ${accion}: ${amigable}`, 7000);
+        throw e;
       }
-      const dbTodos = () => tx<Producto[]>('readonly', (s) => s.getAll());
-      const dbGuardar = (ps: Producto[]) => tx('readwrite', (s) => { ps.forEach((p) => s.put(p)); });
-      const dbBorrar = (id: string) => tx('readwrite', (s) => { s.delete(id); });
-      const dbBorrarTodo = () => tx('readwrite', (s) => { s.clear(); });
+      const filaProducto = (p: Producto) => ({
+        id: p.id, nombre: p.nombre, categoria: p.categoria, subcategoria: p.subcategoria, tela: p.tela, descripcion: p.descripcion,
+        fotos: p.fotos.filter((f) => f.url).map((f) => ({ id: f.id, url: f.url })), peso: p.peso, alto: p.alto, ancho: p.ancho, profundidad: p.profundidad,
+        orden: Math.round(p.creado), actualizado: new Date(p.actualizado || Date.now()).toISOString(),
+      });
+      const filaVariante = (p: Producto, v: Variante, i: number) => ({
+        id: v.id, producto_id: p.id, codigo: v.codigo, color: v.color, medida: v.medida, detalle: v.detalle,
+        efectivo: v.efectivo, lista: v.lista, oferta: v.oferta, stock: /^\d+$/.test(v.stock) ? Number(v.stock) : null, publicar: v.publicar, orden: i,
+      });
+      const deFila = (r: any): Producto => ({
+        id: r.id, creado: Number(r.orden) || 0, actualizado: Date.parse(r.actualizado) || 0, nombre: r.nombre, categoria: r.categoria || '', subcategoria: r.subcategoria || '',
+        tela: r.tela || '', descripcion: r.descripcion || '', fotos: (r.fotos || []).map((f: any) => ({ id: f.id || uid(), url: f.url })),
+        peso: r.peso || '', alto: r.alto || '', ancho: r.ancho || '', profundidad: r.profundidad || '',
+        variantes: (r.variantes || []).sort((x: any, y: any) => x.orden - y.orden).map((v: any) => ({
+          id: v.id, codigo: v.codigo, color: v.color || '', medida: v.medida || '', detalle: v.detalle || '',
+          efectivo: v.efectivo == null ? null : Number(v.efectivo), lista: v.lista == null ? null : Number(v.lista),
+          oferta: v.oferta || '', stock: v.stock == null ? '' : String(v.stock), publicar: v.publicar !== false,
+        })),
+      });
+      function recordar(p: Producto) {
+        remotoVar.set(p.id, new Set(p.variantes.map((v) => v.id)));
+        remotoFotos.set(p.id, p.fotos.map((f) => f.url!).filter(Boolean));
+      }
+      async function dbTodos(): Promise<Producto[]> {
+        const todos: any[] = [];
+        for (let desde = 0; ; desde += 1000) {
+          const { data, error } = await supabase.from('productos').select('*, variantes(*)').order('orden').range(desde, desde + 999);
+          if (error) throw error;
+          todos.push(...data);
+          if (data.length < 1000) break;
+        }
+        const { data: c } = await supabase.from('config').select('valor').eq('clave', 'recargo').maybeSingle();
+        if (c && Number(c.valor) >= 0) cfg.recargo = Number(c.valor);
+        remotoVar.clear(); remotoFotos.clear();
+        const ps = todos.map(deFila);
+        ps.forEach(recordar);
+        return ps;
+      }
+      const lotes = <T,>(xs: T[], n = 400) => Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n));
+      async function dbGuardar(ps: Producto[]) {
+        if (!ps.length) return;
+        guardando++; estado('Guardando…');
+        try {
+          // 1) subir fotos nuevas
+          for (const p of ps) for (const f of p.fotos) {
+            if (!f.blob) continue;
+            const path = `${p.id}/${f.id}.jpg`;
+            const { error } = await supabase.storage.from(BUCKET).upload(path, f.blob, { contentType: f.blob.type || 'image/jpeg', upsert: true });
+            if (error) throw error;
+            f.url = supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+            delete f.blob;
+          }
+          // 2) borrar variantes que se quitaron (si no pasaron a otro producto de este lote)
+          const quedan = new Set(ps.flatMap((p) => p.variantes.map((v) => v.id)));
+          const borrar = ps.flatMap((p) => [...(remotoVar.get(p.id) || [])].filter((id) => !quedan.has(id)));
+          for (const l of lotes(borrar, 100)) { const { error } = await supabase.from('variantes').delete().in('id', l); if (error) throw error; }
+          // 3) productos y variantes
+          for (const l of lotes(ps.map(filaProducto))) { const { error } = await supabase.from('productos').upsert(l); if (error) throw error; }
+          const vs = ps.flatMap((p) => p.variantes.map((v, i) => filaVariante(p, v, i)));
+          for (const l of lotes(vs)) { const { error } = await supabase.from('variantes').upsert(l); if (error) throw error; }
+          // 4) fotos que se sacaron
+          const sacar = ps.flatMap((p) => (remotoFotos.get(p.id) || []).filter((u) => !p.fotos.some((f) => f.url === u)).map(pathDeUrl).filter(Boolean) as string[]);
+          if (sacar.length) await supabase.storage.from(BUCKET).remove(sacar);
+          ps.forEach(recordar);
+          estado('Guardado ✓');
+        } catch (e) { errorDb(e, 'guardar'); }
+        finally { guardando--; }
+      }
+      async function dbBorrar(id: string) {
+        estado('Guardando…');
+        const fotos = (remotoFotos.get(id) || []).map(pathDeUrl).filter(Boolean) as string[];
+        const { error } = await supabase.from('productos').delete().eq('id', id);
+        if (error) errorDb(error, 'borrar');
+        if (fotos.length) await supabase.storage.from(BUCKET).remove(fotos);
+        remotoVar.delete(id); remotoFotos.delete(id);
+        estado('Guardado ✓');
+      }
+      async function dbBorrarTodo() {
+        estado('Guardando…');
+        const { error } = await supabase.from('productos').delete().not('id', 'is', null);
+        if (error) errorDb(error, 'borrar');
+        remotoVar.clear(); remotoFotos.clear();
+        estado('Guardado ✓');
+      }
 
       // ================================================================
       // Utilidades
       // ================================================================
       const $ = <T extends HTMLElement = HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
-      const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+const uid = (): string => (crypto.randomUUID ? crypto.randomUUID() : '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, (c: any) => (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16)));
       const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
       const norm = (s: unknown) => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
       const slugify = (s: string) => norm(s).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120);
@@ -458,7 +581,6 @@ import listaInicial from '../data/lista-precios.json';
       // Configuración y reglas de negocio
       // ================================================================
       const cfg = { recargo: 20 };
-      try { const r = Number(localStorage.getItem('bonteapp-recargo')); if (r >= 0 && localStorage.getItem('bonteapp-recargo') !== null) cfg.recargo = r; } catch {}
       const listaAuto = (efectivo: number | null) => (efectivo ? Math.round(efectivo * (1 + cfg.recargo / 100)) : null);
       const listaDe = (v: Variante) => v.lista ?? listaAuto(v.efectivo);
 
@@ -593,9 +715,10 @@ import listaInicial from '../data/lista-precios.json';
       function guardarLuego(p: Producto) {
         p.actualizado = Date.now(); pendientes.add(p);
         clearTimeout(tGuardar);
-        tGuardar = setTimeout(async () => { const ps = [...pendientes]; pendientes.clear(); await dbGuardar(ps); }, 400);
+        estado('Cambios sin guardar…');
+        tGuardar = setTimeout(async () => { const ps = [...pendientes]; pendientes.clear(); try { await dbGuardar(ps); } catch {} }, 500);
       }
-      addEventListener('beforeunload', () => { if (pendientes.size) dbGuardar([...pendientes]); });
+      addEventListener('beforeunload', (e) => { if (pendientes.size || guardando) { e.preventDefault(); e.returnValue = ''; } });
       $('#tablaPrecios').addEventListener('change', (ev) => {
         const inp = ev.target as HTMLInputElement; const tr = inp.closest('tr'); if (!tr || !inp.dataset.k) return;
         const p = productos.find((x) => x.id === tr.dataset.p)!; const v = p.variantes.find((x) => x.id === tr.dataset.v)!;
@@ -761,7 +884,9 @@ import listaInicial from '../data/lista-precios.json';
         const todos = new Set([...usados, ...propios]);
         editando.variantes.forEach((v) => { if (!v.codigo) v.codigo = siguienteCodigo(editando.categoria, todos); });
         editando.actualizado = Date.now();
-        await dbGuardar([editando]);
+        const btnG = form.querySelector('button[type=submit]') as HTMLButtonElement;
+        btnG.disabled = true;
+        try { await dbGuardar([editando]); } catch { return; } finally { btnG.disabled = false; }
         const i = productos.findIndex((p) => p.id === editando.id);
         if (i >= 0) productos[i] = editando; else productos.push(editando);
         dlg.close(); renderTodo();
@@ -1007,15 +1132,6 @@ import listaInicial from '../data/lista-precios.json';
         const ejemplo = [{ 'Código': '', 'Categoría': 'Almohadones', 'Subcategoría': '', 'Producto': 'Almohadón Ejemplo', 'Tela / material': 'Lino', 'Color': 'Natural', 'Medida': '50 x 50', 'Detalle': '', 'Precio lista': '', 'Efectivo / transferencia': 36000, 'Oferta': '', 'Publicar': 'SI', 'Stock': '', 'Descripción': 'Funda con cierre y relleno', 'Foto 1': '', 'Foto 2': '', 'Foto 3': '', 'Foto 4': '', 'Peso (kg)': '', 'Alto (cm)': '', 'Ancho (cm)': '', 'Profundidad (cm)': '' }];
         XLSX.writeFile(libroSimple(ejemplo, true), 'bonte-plantilla-lista-precios.xlsx');
       });
-      $('#btnExpWeb').addEventListener('click', () => {
-        const prods = ordenados().flatMap((p) => p.variantes.filter((v) => v.publicar).map((v) => ({
-          codigo: v.codigo, categoria: p.categoria, producto: p.nombre, tela: p.tela, color: v.color, medida: v.medida, detalle: v.detalle,
-          lista: listaDe(v), efectivo: v.efectivo, oferta: esPrecio(v.oferta) ? numero(v.oferta) : v.oferta,
-        })));
-        const mes = new Date().toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
-        descargar(new Blob([JSON.stringify({ actualizado: mes[0].toUpperCase() + mes.slice(1), productos: prods }, null, 1)], { type: 'application/json' }), 'lista-precios.json');
-        toast('Este archivo reemplaza src/data/lista-precios.json del sitio.', 5000);
-      });
 
       // ================================================================
       // Exportar Tiendanube
@@ -1126,10 +1242,9 @@ import listaInicial from '../data/lista-precios.json';
       // ================================================================
       // Respaldo, carga inicial, configuración
       // ================================================================
-      const aDataUrl = (b: Blob) => new Promise<string>((res) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.readAsDataURL(b); });
       $('#btnBackup').addEventListener('click', async () => {
-        const datos = await Promise.all(productos.map(async (p) => ({ ...p, fotos: await Promise.all(p.fotos.map(async (f) => (f.blob ? { id: f.id, data: await aDataUrl(f.blob) } : { id: f.id, url: f.url }))) })));
-        descargar(new Blob([JSON.stringify({ app: 'bonteapp', version: 1, recargo: cfg.recargo, productos: datos })], { type: 'application/json' }), `bonteapp-respaldo-${fecha()}.json`);
+        const datos = productos.map((p) => ({ ...p, fotos: p.fotos.map((f) => ({ id: f.id, url: f.url })) }));
+        descargar(new Blob([JSON.stringify({ app: 'bonteapp', version: 2, recargo: cfg.recargo, productos: datos })], { type: 'application/json' }), `bonteapp-respaldo-${fecha()}.json`);
       });
       $('#inpBackup').addEventListener('change', async (ev) => {
         const inp = ev.target as HTMLInputElement; const file = inp.files?.[0]; inp.value = '';
@@ -1137,19 +1252,28 @@ import listaInicial from '../data/lista-precios.json';
         try {
           const j = JSON.parse(await file.text());
           if (j.app !== 'bonteapp' || !Array.isArray(j.productos)) throw 0;
-          if (!confirm(`El respaldo tiene ${j.productos.length} productos. Reemplaza lo que hay ahora en este navegador. ¿Continuar?`)) return;
-          const ps: Producto[] = await Promise.all(j.productos.map(async (p: any) => ({ ...nuevoProducto(), ...p, fotos: await Promise.all((p.fotos || []).map(async (f: any) => (f.data ? { id: f.id, blob: await (await fetch(f.data)).blob() } : { id: f.id, url: f.url }))) })));
+          if (!confirm(`El respaldo tiene ${j.productos.length} productos. Reemplaza TODO lo que hay ahora en la base de datos. ¿Continuar?`)) return;
+          const esUuid = (x: any) => typeof x === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x);
+          const ps: Producto[] = await Promise.all(j.productos.map(async (p: any) => ({
+            ...nuevoProducto(), ...p, id: esUuid(p.id) ? p.id : uid(),
+            variantes: (p.variantes || []).map((v: any) => ({ ...nuevaVariante(), ...v, id: esUuid(v.id) ? v.id : uid() })),
+            fotos: await Promise.all((p.fotos || []).map(async (f: any) => (f.data ? { id: uid(), blob: await (await fetch(f.data)).blob() } : { id: esUuid(f.id) ? f.id : uid(), url: f.url }))),
+          })));
           await dbBorrarTodo(); await dbGuardar(ps);
           productos = ps;
-          if (typeof j.recargo === 'number') guardarRecargo(j.recargo);
+          if (typeof j.recargo === 'number') await guardarRecargo(j.recargo);
           renderTodo(); toast(`Respaldo restaurado: ${ps.length} productos.`);
-        } catch { alert('Ese archivo no es un respaldo de la Bonté App.'); }
+        } catch (e: any) { if (!e?.message?.includes('No se pudo')) alert('No se pudo restaurar: ' + (e?.message || 'el archivo no es un respaldo de la Bonté App.')); }
       });
-      function guardarRecargo(r: number) { cfg.recargo = r; try { localStorage.setItem('bonteapp-recargo', String(r)); } catch {} }
+      async function guardarRecargo(r: number) {
+        cfg.recargo = r;
+        const { error } = await supabase.from('config').upsert({ clave: 'recargo', valor: r });
+        if (error) errorDb(error, 'guardar el recargo');
+      }
       $('#cfgRecargo').addEventListener('change', (ev) => {
         const r = Number((ev.target as HTMLInputElement).value);
         if (!(r >= 0)) return;
-        guardarRecargo(r); renderTodo(); toast(`Recargo de lista: ${r}%. Los precios de lista automáticos se recalcularon.`);
+        guardarRecargo(r).catch(() => {}); renderTodo(); toast(`Recargo de lista: ${r}%. Los precios de lista automáticos se recalcularon.`);
       });
       async function cargarSeed() {
         const seed = JSON.parse($('#seedDatos').textContent || '{}');
@@ -1170,16 +1294,89 @@ import listaInicial from '../data/lista-precios.json';
       $('#btnSeed2').addEventListener('click', cargarSeed);
       $('#btnBorrarTodo').addEventListener('click', async () => {
         if (!productos.length) return;
-        if (!confirm(`¿Borrar los ${productos.length} productos de este navegador? Descargá un respaldo antes.`) || !confirm('¿Seguro? No se puede deshacer.')) return;
+        if (!confirm(`¿Borrar los ${productos.length} productos de la base de datos? Lo ven todos los usuarios y la lista online. Descargá un respaldo antes.`) || !confirm('¿Seguro? No se puede deshacer.')) return;
         await dbBorrarTodo(); productos = []; renderTodo(); toast('Se borró todo.');
+      });
+
+      // ================================================================
+      // Sesión: login, invitaciones, recuperar contraseña
+      // ================================================================
+      const hashInicial: string = (window as any).__bonteHash || '';
+      const vista = (id: string) => {
+        document.body.classList.add('sin-sesion');
+        $('#acceso').hidden = false;
+        ['formLogin', 'formClave', 'noAutorizado', 'cargando'].forEach((x) => ($('#' + x).hidden = x !== id));
+      };
+      const mensaje = (el: string, txt: string, ok = false) => { const m = $(el); m.textContent = txt; m.classList.toggle('ok', ok); m.hidden = !txt; };
+      const traducir = (msg: string) => /invalid login/i.test(msg) ? 'Email o contraseña incorrectos.' : /not confirmed/i.test(msg) ? 'Tenés que confirmar tu email (revisá tu correo).' : /rate limit|too many/i.test(msg) ? 'Demasiados intentos. Esperá unos minutos.' : /should be at least|weak/i.test(msg) ? 'La contraseña es muy corta o débil (mínimo 8 caracteres).' : /same.*password|different from the old/i.test(msg) ? 'Usá una contraseña distinta a la anterior.' : /Failed to fetch|network/i.test(msg) ? 'No hay conexión a internet.' : msg;
+
+      async function entrar() {
+        vista('cargando');
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return vista('formLogin');
+        const { data: ok, error } = await supabase.rpc('es_admin');
+        if (error || !ok) { $('#naEmail').textContent = user.email || ''; return vista('noAutorizado'); }
+        try { productos = await dbTodos(); }
+        catch (e: any) { toast('No se pudieron cargar los productos: ' + traducir(e?.message || ''), 8000); productos = []; }
+        $('#btnSalir').title = `Salir (${user.email})`;
+        estado(user.email || '');
+        $('#acceso').hidden = true;
+        document.body.classList.remove('sin-sesion');
+        let t = 'productos'; try { t = localStorage.getItem('bonteapp-tab') || t; } catch {}
+        irA(['productos', 'precios', 'io'].includes(t) ? t : 'productos');
+      }
+
+      $('#formLogin').addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(ev.target as HTMLFormElement);
+        const btn = (ev.target as HTMLFormElement).querySelector('button[type=submit]') as HTMLButtonElement;
+        btn.disabled = true; mensaje('#loginMsg', '');
+        const { error } = await supabase.auth.signInWithPassword({ email: String(fd.get('email')).trim(), password: String(fd.get('password')) });
+        btn.disabled = false;
+        if (error) return mensaje('#loginMsg', traducir(error.message));
+        entrar();
+      });
+      $('#btnOlvide').addEventListener('click', async () => {
+        const email = String((($('#formLogin') as HTMLFormElement).elements.namedItem('email') as HTMLInputElement).value).trim();
+        if (!email) return mensaje('#loginMsg', 'Escribí tu email arriba y volvé a tocar "Olvidé mi contraseña".');
+        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: location.origin + '/bonteapp' });
+        mensaje('#loginMsg', error ? traducir(error.message) : `Si ${email} tiene usuario, te llegó un mail con un link para elegir una contraseña nueva.`, !error);
+      });
+      $('#formClave').addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(ev.target as HTMLFormElement);
+        const c1 = String(fd.get('clave')), c2 = String(fd.get('clave2'));
+        if (c1 !== c2) return mensaje('#claveMsg', 'Las contraseñas no coinciden.');
+        const { error } = await supabase.auth.updateUser({ password: c1 });
+        if (error) return mensaje('#claveMsg', traducir(error.message));
+        history.replaceState(null, '', location.pathname);
+        toast('Contraseña guardada ✓');
+        entrar();
+      });
+      const salir = async () => { await supabase.auth.signOut(); location.replace(location.pathname); };
+      $('#btnSalir').addEventListener('click', salir);
+      $('#btnSalir2').addEventListener('click', salir);
+      $('#btnRecargar').addEventListener('click', async () => {
+        if (pendientes.size || guardando) return toast('Esperá a que se terminen de guardar los cambios.');
+        try { productos = await dbTodos(); renderTodo(); toast('Datos actualizados ✓', 1500); } catch (e: any) { toast('No se pudo actualizar: ' + traducir(e?.message || '')); }
+      });
+      supabase.auth.onAuthStateChange((evento) => {
+        if (evento === 'PASSWORD_RECOVERY') vista('formClave');
+        if (evento === 'SIGNED_OUT') vista('formLogin');
       });
 
       // Inicio
       (async () => {
-        try { await navigator.storage?.persist?.(); } catch {}
-        try { productos = await dbTodos(); } catch { toast('Este navegador no permite guardar datos (¿modo incógnito?).', 8000); }
-        let t = 'productos'; try { t = localStorage.getItem('bonteapp-tab') || t; } catch {}
-        irA(['productos', 'precios', 'io'].includes(t) ? t : 'productos');
+        vista('cargando');
+        const errHash = new URLSearchParams(hashInicial.slice(1)).get('error_description');
+        const { data: { session } } = await supabase.auth.getSession();
+        if (errHash) { vista('formLogin'); return mensaje('#loginMsg', /expired|invalid/i.test(errHash) ? 'El link venció o ya se usó. Pedí uno nuevo con "Olvidé mi contraseña".' : errHash); }
+        if (!session) return vista('formLogin');
+        if (/type=(invite|recovery|signup)/.test(hashInicial)) {
+          $('#claveEmail').textContent = session.user.email || '';
+          return vista('formClave');
+        }
+        entrar();
       })();
     </script>
   </body>
