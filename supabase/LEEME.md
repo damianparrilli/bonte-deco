@@ -18,12 +18,18 @@ usan Supabase como base de datos, login de usuarios y almacenamiento de fotos.
 5. **Authentication → Users → Invite user** con tu email. Te llega un mail:
    el link abre `/bonteapp` y te pide elegir la contraseña.
 
-## Agregar otra persona
+## Usuarios
 
-1. SQL Editor: `insert into public.admins (email) values ('persona@mail.com');`
-2. Authentication → Users → **Invite user** con ese email.
+Hay dos tipos de usuario:
 
-Para sacarle el acceso: `delete from public.admins where email = 'persona@mail.com';`
+- **Consulta** (por ejemplo, ventas): solo ve la *Lista de precios* en la app, sin poder editar.
+  Para crearlo: Authentication → Users → **Invite user** con su email. Nada más.
+- **Admin**: ve todos los accesos del tarjetero (Lista de precios con botón *Editar*,
+  Productos e Importar / Exportar). Además de invitarlo, agregá su email en SQL Editor:
+  `insert into public.admins (email) values ('persona@mail.com');`
+
+Para quitarle el permiso de admin: `delete from public.admins where email = 'persona@mail.com';`
+Para quitarle todo acceso: Authentication → Users → borrar el usuario.
 
 ## Seguridad
 
