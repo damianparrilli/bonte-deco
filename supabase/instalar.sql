@@ -56,23 +56,25 @@ create table if not exists public.config (clave text primary key, valor jsonb no
 insert into public.config (clave, valor) values ('recargo', '20') on conflict do nothing;
 
 -- 3) Seguridad (Row Level Security)
+--    La lista es de uso interno: solo usuarios logueados pueden leerla.
+--    Solo los emails de "admins" pueden modificarla.
 alter table public.admins enable row level security;     -- sin políticas: solo se edita desde acá
 alter table public.productos enable row level security;
 alter table public.variantes enable row level security;
 alter table public.config enable row level security;
 
 drop policy if exists "leer productos" on public.productos;
-create policy "leer productos" on public.productos for select using (true);
+create policy "leer productos" on public.productos for select to authenticated using (true);
 drop policy if exists "editar productos" on public.productos;
 create policy "editar productos" on public.productos for all to authenticated using (public.es_admin()) with check (public.es_admin());
 
 drop policy if exists "leer variantes" on public.variantes;
-create policy "leer variantes" on public.variantes for select using (publicar or public.es_admin());
+create policy "leer variantes" on public.variantes for select to authenticated using (publicar or public.es_admin());
 drop policy if exists "editar variantes" on public.variantes;
 create policy "editar variantes" on public.variantes for all to authenticated using (public.es_admin()) with check (public.es_admin());
 
 drop policy if exists "leer config" on public.config;
-create policy "leer config" on public.config for select using (true);
+create policy "leer config" on public.config for select to authenticated using (true);
 drop policy if exists "editar config" on public.config;
 create policy "editar config" on public.config for all to authenticated using (public.es_admin()) with check (public.es_admin());
 
