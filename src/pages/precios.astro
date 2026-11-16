@@ -1,0 +1,260 @@
+---
+import Layout from '../layouts/Layout.astro';
+import datos from '../data/lista-precios.json';
+
+// ---------------------------------------------------------------------------
+// Para que la lista se actualice sola desde Google Sheets:
+// en la planilla, Archivo → Compartir → Publicar en la web → hoja
+// "Lista de precios" → formato CSV, y pegá el link acá.
+// Si queda vacío, se usa la lista guardada en src/data/lista-precios.json.
+// ---------------------------------------------------------------------------
+const GOOGLE_SHEET_CSV = '';
+const WHATSAPP = '541155630343';
+---
+
+<Layout
+  title="Lista de precios - Bonté Deco"
+  description="Lista de precios actualizada de Bonté Deco. Buscá por nombre o código de producto."
+  keywords="bonte, bonté, lista de precios, precios, almohadones, manteles, mantas, deco textil"
+>
+  <div class="lp">
+    <div class="lp-wrap">
+      <header class="lp-head">
+        <h1 class="lp-title">Lista de precios</h1>
+        <p class="lp-sub"><span id="lpFecha">{datos.actualizado}</span> · Precios en pesos argentinos. Pagando en efectivo o transferencia tenés precio especial.</p>
+      </header>
+
+      <div class="lp-controls">
+        <label class="lp-search">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16Zm10 2-4.35-4.35" /></svg>
+          <input id="lpBuscar" type="search" placeholder="Buscar por nombre, código, tela, color o medida…" autocomplete="off" aria-label="Buscar producto" />
+        </label>
+        <div class="lp-cats" id="lpCats" role="group" aria-label="Categorías"></div>
+      </div>
+
+      <p class="lp-count" id="lpCount" aria-live="polite"></p>
+      <div id="lpLista"></div>
+      <p class="lp-vacio" id="lpVacio" hidden>No encontramos productos con esa búsqueda. Probá con otra palabra o <a id="lpVacioWa" target="_blank" rel="noopener">consultanos por WhatsApp</a>.</p>
+      <noscript><p class="lp-vacio">Activá JavaScript para ver la lista de precios.</p></noscript>
+    </div>
+  </div>
+
+  <script is:inline type="application/json" id="lpDatos" set:html={JSON.stringify(datos)} />
+  <script is:inline define:vars={{ GOOGLE_SHEET_CSV, WHATSAPP }}>
+    (function () {
+      const $ = (id) => document.getElementById(id);
+      const base = JSON.parse($('lpDatos').textContent);
+      let productos = base.productos;
+      let categoria = '';
+
+      const norm = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+      const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+      const pesos = (n) => '$ ' + Math.round(n).toLocaleString('es-AR');
+      const waLink = (txt) => `https://wa.me/${WHATSAPP}?text=${encodeURIComponent(txt)}`;
+
+      function indexar(p) {
+        p._q = norm([p.codigo, p.categoria, p.producto, p.tela, p.color, p.medida, p.detalle].join(' '));
+        p._q2 = p._q.replace(/[\s-]/g, '');
+        return p;
+      }
+      productos.forEach(indexar);
+
+      // ---------- filtros ----------
+      function categorias() {
+        return [...new Set(productos.map((p) => p.categoria))];
+      }
+      function renderCats() {
+        const cats = categorias();
+        if (categoria && !cats.includes(categoria)) categoria = '';
+        $('lpCats').innerHTML = ['', ...cats].map((c) =>
+          `<button type="button" class="lp-chip" aria-pressed="${c === categoria}" data-cat="${esc(c)}">${c ? esc(c) : 'Todo'}</button>`
+        ).join('');
+      }
+
+      function coincide(p, palabras) {
+        return palabras.every((w) => p._q.includes(w) || p._q2.includes(w.replace(/-/g, '')));
+      }
+
+      function precioHtml(p) {
+        if (!p.efectivo && !p.lista) {
+          return `<div class="lp-precios"><a class="lp-consultar" target="_blank" rel="noopener" href="${waLink(`Hola! Quería consultar el precio de ${p.codigo} - ${p.producto}${p.medida ? ' ' + p.medida : ''}`)}">Consultar precio</a></div>`;
+        }
+        const oferta = p.oferta === '' || p.oferta == null ? '' :
+          `<span class="lp-oferta">Oferta ${typeof p.oferta === 'number' ? pesos(p.oferta) : esc(p.oferta)}</span>`;
+        return `<div class="lp-precios">
+            ${p.lista ? `<span class="lp-lista"><small>Lista</small>${pesos(p.lista)}</span>` : ''}
+            ${p.efectivo ? `<span class="lp-efectivo"><small>Efectivo / transf.</small>${pesos(p.efectivo)}</span>` : ''}
+            ${oferta}
+          </div>`;
+      }
+
+      function render() {
+        const q = norm($('lpBuscar').value).trim();
+        const palabras = q ? q.split(/\s+/) : [];
+        const visibles = productos.filter((p) => (!categoria || p.categoria === categoria) && coincide(p, palabras));
+        const grupos = new Map();
+        visibles.forEach((p) => {
+          if (!grupos.has(p.categoria)) grupos.set(p.categoria, []);
+          grupos.get(p.categoria).push(p);
+        });
+        $('lpLista').innerHTML = [...grupos].map(([cat, items]) => `
+          <section class="lp-grupo">
+            <h2 class="lp-grupo-titulo">${esc(cat)} <span>${items.length}</span></h2>
+            <ul class="lp-items">
+              ${items.map((p) => {
+                const extra = [p.tela, p.color, p.detalle].filter(Boolean).map(esc).join(' · ');
+                return `<li class="lp-item">
+                  <span class="lp-codigo">${esc(p.codigo)}</span>
+                  <div class="lp-info">
+                    <span class="lp-nombre">${esc(p.producto)}</span>
+                    ${extra ? `<span class="lp-extra">${extra}</span>` : ''}
+                  </div>
+                  <span class="lp-medida">${esc(p.medida || '')}</span>
+                  ${precioHtml(p)}
+                </li>`;
+              }).join('')}
+            </ul>
+          </section>`).join('');
+        const total = productos.length;
+        $('lpCount').textContent = visibles.length === total ? `${total} productos` : `${visibles.length} de ${total} productos`;
+        $('lpVacio').hidden = visibles.length > 0;
+        $('lpVacioWa').href = waLink(`Hola! Estoy buscando: ${$('lpBuscar').value}`);
+        // guardar búsqueda en la URL para poder compartirla
+        const url = new URL(location.href);
+        $('lpBuscar').value ? url.searchParams.set('q', $('lpBuscar').value) : url.searchParams.delete('q');
+        categoria ? url.searchParams.set('cat', categoria) : url.searchParams.delete('cat');
+        history.replaceState(null, '', url);
+      }
+
+      $('lpCats').addEventListener('click', (e) => {
+        const b = e.target.closest('.lp-chip');
+        if (!b) return;
+        categoria = b.dataset.cat;
+        renderCats(); render();
+      });
+      let t;
+      $('lpBuscar').addEventListener('input', () => { clearTimeout(t); t = setTimeout(render, 80); });
+
+      // el buscador queda fijo debajo del menú del sitio (si el menú también es fijo)
+      function ajustarTop() {
+        const h = document.querySelector('body > header, header');
+        const pos = h ? getComputedStyle(h).position : '';
+        const top = h && (pos === 'sticky' || pos === 'fixed') ? Math.max(0, h.getBoundingClientRect().bottom) : 0;
+        document.querySelector('.lp-controls').style.top = top + 'px';
+      }
+      ajustarTop();
+      addEventListener('resize', ajustarTop);
+
+      const params = new URLSearchParams(location.search);
+      $('lpBuscar').value = params.get('q') || '';
+      categoria = params.get('cat') || '';
+      renderCats(); render();
+
+      // ---------- lista en vivo desde Google Sheets (opcional) ----------
+      function parseCsv(txt) {
+        const filas = []; let fila = []; let celda = ''; let comillas = false;
+        for (let i = 0; i < txt.length; i++) {
+          const c = txt[i];
+          if (comillas) {
+            if (c === '"' && txt[i + 1] === '"') { celda += '"'; i++; }
+            else if (c === '"') comillas = false;
+            else celda += c;
+          } else if (c === '"') comillas = true;
+          else if (c === ',') { fila.push(celda); celda = ''; }
+          else if (c === '\n' || c === '\r') {
+            if (c === '\r' && txt[i + 1] === '\n') i++;
+            fila.push(celda); filas.push(fila); fila = []; celda = '';
+          } else celda += c;
+        }
+        if (celda || fila.length) { fila.push(celda); filas.push(fila); }
+        return filas;
+      }
+      const numero = (s) => {
+        // acepta "$ 94.800", "$94,800", "94800", "94800.50" y "94.800,50"
+        let t = String(s ?? '').replace(/[^\d.,]/g, '');
+        const dec = t.match(/[.,](\d{1,2})$/);
+        t = dec ? t.slice(0, -dec[0].length).replace(/[.,]/g, '') + '.' + dec[1] : t.replace(/[.,]/g, '');
+        const n = Number(t);
+        return t && Number.isFinite(n) && n > 0 ? n : null;
+      };
+      async function cargarSheet() {
+        if (!GOOGLE_SHEET_CSV) return;
+        try {
+          const res = await fetch(GOOGLE_SHEET_CSV, { cache: 'no-store' });
+          if (!res.ok) throw new Error(res.status);
+          const [enc, ...filas] = parseCsv(await res.text());
+          const col = (nombre) => enc.findIndex((h) => norm(h).startsWith(norm(nombre)));
+          const C = { codigo: col('codigo'), categoria: col('categoria'), producto: col('producto'), tela: col('tela'), color: col('color'),
+            medida: col('medida'), detalle: col('detalle'), lista: col('precio lista'), efectivo: col('efectivo'), oferta: col('oferta'), publicar: col('publicar') };
+          if (C.producto < 0 || C.efectivo < 0) throw new Error('encabezados');
+          const v = (f, k) => (C[k] >= 0 ? String(f[C[k]] ?? '').trim() : '');
+          const nuevos = filas
+            .filter((f) => v(f, 'producto') && norm(v(f, 'publicar')) !== 'no')
+            .map((f) => indexar({
+              codigo: v(f, 'codigo'), categoria: v(f, 'categoria') || 'Otros', producto: v(f, 'producto'), tela: v(f, 'tela'),
+              color: v(f, 'color'), medida: v(f, 'medida'), detalle: v(f, 'detalle'),
+              lista: numero(v(f, 'lista')), efectivo: numero(v(f, 'efectivo')),
+              oferta: /^[\s$\d.,]+$/.test(v(f, 'oferta')) ? numero(v(f, 'oferta')) ?? '' : v(f, 'oferta'),
+            }));
+          if (!nuevos.length) return;
+          productos = nuevos;
+          $('lpFecha').textContent = 'Actualizada';
+          renderCats(); render();
+        } catch (e) {
+          console.warn('No se pudo leer la planilla de precios; se muestra la lista guardada.', e);
+        }
+      }
+      cargarSheet();
+    })();
+  </script>
+
+  <style is:global>
+    .lp { padding: 40px 5% 100px; }
+    .lp-wrap { max-width: 1100px; margin: 0 auto; }
+    .lp-head { margin-bottom: 24px; }
+    .lp-title { font-size: clamp(2.2rem, 5vw, 3.2rem); -webkit-text-stroke: 0.5px #3c2c0b !important; line-height: 1.1; }
+    .lp-sub { margin-top: 8px; color: #7a6a4f; font-size: .95rem; }
+    .lp-controls { position: sticky; top: 0; z-index: 10; background: #faf9f7; padding: 12px 0 10px; display: flex; flex-direction: column; gap: 12px; border-bottom: 1px solid #ebe5da; }
+    .lp-search { display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid #ddd3c2; border-radius: 12px; padding: 0 14px; }
+    .lp-search:focus-within { border-color: #5f4d27; box-shadow: 0 0 0 3px rgba(95, 77, 39, .12); }
+    .lp-search svg, .lp-search svg * { color: #8a7a5f; }
+    .lp-search input { flex: 1; border: 0; outline: 0; background: transparent; padding: 13px 0; font: inherit; font-size: 1rem; min-width: 0; }
+    .lp-cats { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+    .lp-chip { flex: none; border: 1px solid #ddd3c2; background: #fff; border-radius: 999px; padding: 6px 14px; font: inherit; font-size: .85rem; cursor: pointer; white-space: nowrap; }
+    .lp-chip:hover { border-color: #5f4d27; }
+    .lp-chip[aria-pressed="true"] { background: #5f4d27; border-color: #5f4d27; color: #fff; }
+    .lp-count { margin: 14px 0 6px; font-size: .85rem; color: #8a7a5f; }
+    .lp-grupo { padding: 0; margin-top: 22px; }
+    .lp-grupo-titulo { font-size: 1.7rem; margin: 0 0 8px !important; display: flex; align-items: baseline; gap: 10px; }
+    .lp-grupo-titulo span { font-family: "Plus Jakarta Sans", sans-serif; font-size: .8rem; color: #8a7a5f; -webkit-text-stroke: 0; }
+    .lp-items { list-style: none; background: #fff; border: 1px solid #ebe5da; border-radius: 14px; overflow: hidden; }
+    .lp-item { display: grid; grid-template-columns: 82px minmax(0, 1fr) 150px 300px; gap: 14px; align-items: center; padding: 12px 16px; border-top: 1px solid #f1ece3; }
+    .lp-item:first-child { border-top: 0; }
+    .lp-codigo { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem; color: #8a7a5f; }
+    .lp-info { display: flex; flex-direction: column; min-width: 0; }
+    .lp-nombre { font-weight: 600; }
+    .lp-extra { font-size: .82rem; color: #7a6a4f; }
+    .lp-medida { font-size: .9rem; }
+    .lp-precios { display: flex; gap: 14px; justify-content: flex-end; align-items: center; flex-wrap: wrap; text-align: right; }
+    .lp-precios small { display: block; font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: #8a7a5f; font-weight: 500; }
+    .lp-lista { color: #7a6a4f; font-size: .9rem; }
+    .lp-efectivo { font-weight: 700; font-size: 1.02rem; }
+    .lp-oferta { background: #fbeee0; color: #9a4f00; border-radius: 999px; padding: 3px 10px; font-size: .78rem; font-weight: 600; }
+    .lp-consultar { font-size: .88rem; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+    .lp-vacio { text-align: center; padding: 50px 0; color: #7a6a4f; }
+    .lp-vacio a { text-decoration: underline; }
+    @media (max-width: 760px) {
+      .lp { padding-top: 24px; }
+      .lp-item { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "info codigo" "medida medida" "precios precios"; gap: 4px 10px; padding: 12px 14px; }
+      .lp-codigo { grid-area: codigo; align-self: start; }
+      .lp-info { grid-area: info; }
+      .lp-medida { grid-area: medida; font-size: .85rem; }
+      .lp-medida:empty { display: none; }
+      .lp-precios { grid-area: precios; justify-content: flex-start; text-align: left; margin-top: 4px; }
+    }
+    @media print {
+      .lp-controls, header, footer, nav { display: none !important; }
+      .lp-item { break-inside: avoid; }
+    }
+  </style>
+</Layout>
